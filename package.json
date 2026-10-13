@@ -1,0 +1,16 @@
+{
+  "name": "lava-ja-matola",
+  "version": "1.0.0",
+  "description": "Lava Já Matola - Plataforma Inteligente de Car Wash",
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "seed": "cd server && npm run seed",
+    "test": "cd server && npm test",
+    "server": "cd server && npm start",
+    "client": "cd client && npm run dev",
+    "build:client": "cd client && npm run build"
+  },
+  "keywords": ["car-wash", "matola", "ai", "mozambique"],
+  "author": "Equipa Lava Já Matola",
+  "license": "ISC"
+}
