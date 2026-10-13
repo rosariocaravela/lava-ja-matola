@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Award, Gift, Sparkles, CheckCircle2, Clock, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Award, Gift, Sparkles, CheckCircle2, AlertCircle, TicketCheck } from 'lucide-react';
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 
+const REDEMPTION_STATUS_LABELS = {
+  disponivel: 'Disponível',
+  utilizado: 'Utilizado',
+  expirado: 'Expirado'
+};
+
+const REDEMPTION_STATUS_STYLES = {
+  disponivel: 'bg-emerald-50 border-emerald-300 text-emerald-950',
+  utilizado: 'bg-slate-50 border-slate-200 text-slate-600',
+  expirado: 'bg-rose-50 border-rose-200 text-rose-800'
+};
+
 export default function LoyaltyPage() {
   const { user, refreshProfile } = useAuth();
+  const isCustomer = user?.role === 'customer';
   const [loyaltyData, setLoyaltyData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [redeemSuccess, setRedeemSuccess] = useState(null);
@@ -14,12 +27,12 @@ export default function LoyaltyPage() {
 
   useEffect(() => {
     loadLoyaltyData();
-  }, [user]);
+  }, [isCustomer]);
 
   async function loadLoyaltyData() {
     try {
       setLoading(true);
-      if (user) {
+      if (isCustomer) {
         const data = await apiRequest('/loyalty/me');
         setLoyaltyData(data);
       } else {
@@ -34,8 +47,10 @@ export default function LoyaltyPage() {
   }
 
   async function handleRedeem(reward) {
-    if (!user) {
-      alert('Por favor entre na sua conta para resgatar recompensas.');
+    if (!isCustomer) {
+      alert(user
+        ? 'O resgate de recompensas está disponível apenas para contas de cliente.'
+        : 'Por favor entre na sua conta de cliente para resgatar recompensas.');
       return;
     }
 
@@ -68,7 +83,7 @@ export default function LoyaltyPage() {
     }
   }
 
-  const balance = loyaltyData?.balance_points || 0;
+  const balance = isCustomer ? loyaltyData?.balance_points || 0 : 0;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
@@ -80,44 +95,49 @@ export default function LoyaltyPage() {
             <span>Passaporte Lava Já VIP</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
-            As suas lavagens geram recompensas reais
+            Cada lavagem aproxima-o de uma recompensa
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Receba 10 pontos ao criar a conta, ganhe 10 a 40 por lavagem e mais 10 pontos a cada 3 semanas após a primeira lavagem concluída. As recompensas começam nos 50 pontos.
+            Junte pontos com as suas lavagens e troque-os por serviços ou descontos. Cada cartão mostra o benefício e quantos pontos são necessários.
           </p>
         </div>
 
         {/* User points widget */}
         <div className="mt-6 pt-6 border-t border-slate-700/80 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black text-xl shadow-lg">
-              ★
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 uppercase font-semibold">Saldo Atual de Pontos</div>
-              <div className="text-3xl font-black text-amber-300 tracking-tight">
-                {balance} <span className="text-sm font-semibold text-white">pontos</span>
+          {isCustomer ? (
+            <>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center font-black text-xl shadow-lg">
+                  ★
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400 uppercase font-semibold">Os seus pontos disponíveis</div>
+                  <div className="text-3xl font-black text-amber-300 tracking-tight">
+                    {balance} <span className="text-sm font-semibold text-white">pontos</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-
-          {!user ? (
+              <div className="text-xs text-slate-300 bg-white/10 px-4 py-2 rounded-xl backdrop-blur-xs border border-white/10">
+                Total acumulado: <strong>{loyaltyData?.lifetime_points || 0} pts</strong>
+              </div>
+            </>
+          ) : !user ? (
             <Link
               to="/login"
               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition-all shadow-md"
             >
-              Iniciar Sessão para Acumular
+              Entre como cliente para acumular pontos
             </Link>
           ) : (
-            <div className="text-xs text-slate-300 bg-white/10 px-4 py-2 rounded-xl backdrop-blur-xs border border-white/10">
-              Pontos Acumulados na Vida: <strong>{loyaltyData?.lifetime_points || 0} pts</strong>
+            <div className="text-xs text-slate-200 bg-white/10 px-4 py-3 rounded-xl border border-white/10">
+              Este catálogo é para clientes. Os pontos são acumulados na conta do cliente após cada lavagem concluída.
             </div>
           )}
         </div>
       </div>
 
       {/* Success notification after redemption */}
-      {redeemSuccess && (
+      {isCustomer && redeemSuccess && (
         <div className="p-5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 shadow-md space-y-2 animate-in fade-in">
           <div className="flex items-center gap-2 font-black text-sm">
             <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -129,12 +149,12 @@ export default function LoyaltyPage() {
           <div className="p-3 bg-white border border-emerald-200 rounded-xl inline-block mt-2">
             <div className="text-[10px] text-slate-500 uppercase font-semibold">Código do Voucher</div>
             <div className="text-xl font-mono font-black text-emerald-700 tracking-widest">{redeemSuccess.code}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">Apresente este código no car wash ao pagar.</div>
+            <div className="text-[10px] text-slate-500 mt-1">Apresente-o no balcão antes do pagamento. O voucher só pode ser utilizado uma vez.</div>
           </div>
         </div>
       )}
 
-      {redeemError && (
+      {isCustomer && redeemError && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{redeemError}</span>
@@ -146,57 +166,114 @@ export default function LoyaltyPage() {
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-xl font-black text-slate-900 tracking-tight">Catálogo de Benefícios Disponíveis</h2>
-            <p className="text-xs text-slate-500">Selecione uma recompensa para resgatar com os seus pontos.</p>
+            <p className="text-xs text-slate-500">Veja o benefício incluído e o custo em pontos antes de resgatar.</p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {loyaltyData?.availableRewards?.map((reward) => {
-            const hasEnough = balance >= reward.points_cost;
+            const hasEnough = isCustomer && balance >= reward.points_cost;
             const pointsNeeded = reward.points_cost - balance;
+            const progress = isCustomer
+              ? Math.min(100, Math.round((balance / reward.points_cost) * 100))
+              : 0;
+            const isServiceBenefit = reward.benefit_type === 'service';
 
             return (
               <div
                 key={reward.id}
-                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow"
+                className="group bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden hover:-translate-y-0.5 hover:shadow-lg transition-all"
               >
-                <div>
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
-                      <Gift className="w-4 h-4" />
+                <div className={`h-1.5 ${isServiceBenefit ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                <div className="flex flex-1 flex-col p-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                      isServiceBenefit ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'
+                    }`}>
+                      {isServiceBenefit ? <Gift className="h-3.5 w-3.5" /> : <Award className="h-3.5 w-3.5" />}
+                      {isServiceBenefit ? 'Serviço incluído' : 'Desconto em dinheiro'}
                     </span>
-                    <span className="font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full text-xs font-mono">
-                      {reward.points_cost} pts
+                    <span className="shrink-0 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-black text-white">
+                      {reward.points_cost} <span className="font-semibold text-amber-300">pts</span>
                     </span>
                   </div>
 
-                  <h3 className="font-bold text-sm text-slate-900 mb-1.5 leading-snug">
+                  <h3 className="mt-4 font-black text-base leading-snug text-slate-900">
                     {reward.title}
                   </h3>
-                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                  <p className="mt-2 min-h-10 text-xs leading-relaxed text-slate-600">
                     {reward.description || 'Benefício exclusivo para clientes do Passaporte Lava Já.'}
                   </p>
-                </div>
 
-                <div>
+                  <div className={`mt-4 rounded-xl border p-3 ${
+                    isServiceBenefit ? 'border-amber-200 bg-amber-50/70' : 'border-emerald-200 bg-emerald-50/70'
+                  }`}>
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      {isServiceBenefit ? 'O que recebe' : 'Desconto aplicado'}
+                    </div>
+                    <div className={`mt-1 text-sm font-black ${
+                      isServiceBenefit ? 'text-amber-950' : 'text-emerald-900'
+                    }`}>
+                      {isServiceBenefit
+                        ? reward.service_name || reward.title
+                        : `Até ${Number(reward.discount_mzn).toLocaleString('pt-MZ')} MT`}
+                    </div>
+                    {isServiceBenefit && reward.service_name && (
+                      <div className="mt-1 text-[11px] text-slate-600">Válido para: {reward.service_name}</div>
+                    )}
+                    {isServiceBenefit && reward.discount_mzn > 0 && (
+                      <div className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                        Valor de referência: {Number(reward.discount_mzn).toLocaleString('pt-MZ')} MT — não é dinheiro nem desconto.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-auto pt-5">
                   <button
                     onClick={() => handleRedeem(reward)}
-                    disabled={!hasEnough || redeemingId === reward.id}
-                    className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                      hasEnough
-                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-xs'
-                        : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                    disabled={!isCustomer || !hasEnough || redeemingId === reward.id}
+                    className={`w-full rounded-xl px-3 py-3 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+                      hasEnough && isCustomer
+                        ? 'bg-amber-400 text-slate-950 shadow-sm hover:bg-amber-300 cursor-pointer'
+                        : 'bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed'
                     }`}
                   >
-                    {hasEnough ? (
+                    {isCustomer && hasEnough ? (
                       <>
                         <Sparkles className="w-3.5 h-3.5" />
-                        <span>Resgatar Recompensa</span>
+                        <span>{redeemingId === reward.id ? 'A resgatar...' : `Resgatar por ${reward.points_cost} pontos`}</span>
                       </>
+                    ) : !user ? (
+                      <span>Entre para resgatar</span>
+                    ) : !isCustomer ? (
+                      <span>Exclusivo para clientes</span>
                     ) : (
-                      <span>Faltam {pointsNeeded} pts</span>
+                      <span>Faltam {pointsNeeded} pontos</span>
                     )}
                   </button>
+
+                  {isCustomer && (
+                    <div className="mt-3">
+                      <div className="mb-1.5 flex justify-between text-[10px] font-semibold text-slate-500">
+                        <span>Seu progresso</span>
+                        <span>{Math.min(balance, reward.points_cost)} / {reward.points_cost} pts</span>
+                      </div>
+                      <div
+                        role="progressbar"
+                        aria-label={`Progresso para ${reward.title}`}
+                        aria-valuemin="0"
+                        aria-valuemax={reward.points_cost}
+                        aria-valuenow={Math.min(balance, reward.points_cost)}
+                        className="h-2 overflow-hidden rounded-full bg-slate-100"
+                      >
+                        <div
+                          className="h-full rounded-full bg-amber-400 transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  </div>
                 </div>
               </div>
             );
@@ -205,35 +282,60 @@ export default function LoyaltyPage() {
       </div>
 
       {/* User's Redeemed Vouchers */}
-      {user && loyaltyData?.redemptions && loyaltyData.redemptions.length > 0 && (
+      {isCustomer && loyaltyData?.redemptions && loyaltyData.redemptions.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
-            Meus Vouchers Resgatados
-          </h2>
+          <div className="flex items-center gap-2">
+            <TicketCheck className="h-4 w-4 text-emerald-600" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
+              Meus Vouchers Resgatados
+            </h2>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {loyaltyData.redemptions.map((red) => (
               <div
                 key={red.id}
-                className={`p-4 rounded-xl border text-xs ${
-                  red.status === 'disponivel'
-                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
-                    : 'bg-slate-50 border-slate-200 text-slate-500 opacity-70'
-                }`}
+                className={`p-4 rounded-xl border text-xs ${REDEMPTION_STATUS_STYLES[red.status] || REDEMPTION_STATUS_STYLES.utilizado}`}
               >
                 <div className="flex justify-between items-start mb-2">
                   <span className="font-bold text-slate-900">{red.reward_title}</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                    red.status === 'disponivel' ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-200 text-slate-600'
-                  }`}>
-                    {red.status}
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80">
+                    {REDEMPTION_STATUS_LABELS[red.status] || red.status}
                   </span>
                 </div>
+                {red.reward_description && (
+                  <p className="text-[11px] leading-relaxed text-slate-600">{red.reward_description}</p>
+                )}
+                {red.reward_service_name && (
+                  <div className="mt-2 text-[11px] font-semibold text-blue-800">
+                    Válido para: {red.reward_service_name}
+                  </div>
+                )}
+                {red.discount_mzn > 0 && (
+                  <div className="mt-2 font-semibold text-emerald-800">
+                    {red.benefit_type === 'service'
+                      ? `Benefício de serviço • referência ${red.discount_mzn} MT`
+                      : `Desconto até ${red.discount_mzn} MT`}
+                  </div>
+                )}
                 <div className="text-lg font-mono font-black text-slate-900 my-1">
                   {red.redemption_code}
                 </div>
                 <div className="text-[10px] text-slate-500">
+                  {red.points_spent} pontos utilizados
+                </div>
+                <div className="text-[10px] text-slate-500 mt-1">
                   Resgatado em {new Date(red.created_at).toLocaleDateString('pt-PT')}
                 </div>
+                {red.used_at && (
+                  <div className="text-[10px] text-slate-500">
+                    Utilizado em {new Date(red.used_at).toLocaleDateString('pt-PT')}
+                  </div>
+                )}
+                {red.status === 'disponivel' && (
+                  <div className="mt-3 border-t border-current/10 pt-2 text-[10px] font-medium">
+                    Apresente o código no balcão antes de pagar.
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -241,7 +343,7 @@ export default function LoyaltyPage() {
       )}
 
       {/* Points Transactions History */}
-      {user && loyaltyData?.transactions && loyaltyData.transactions.length > 0 && (
+      {isCustomer && loyaltyData?.transactions && loyaltyData.transactions.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-3">
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
             Histórico de Movimentos de Pontos

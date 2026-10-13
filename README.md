@@ -11,22 +11,19 @@ O **Lava Já Matola** é uma plataforma digital completa criada para modernizar 
 
 1. **Captação de Novos Clientes:** Acesso digital transparente aos serviços, horários e preços em Meticais (MT), localização integrada com rota no Google Maps e agendamento inteligente sem conflitos de capacidade.
 2. **Fidelização Contínua:** O programa **«Passaporte Lava Já»** credita 10 pontos de boas-vindas, 10 pontos por lavagem básica, 20 por completa, 25 por lavagem de motor, 30 por lavagem premium e 40 por higienização especializada. Após a primeira lavagem concluída, credita mais 10 pontos a cada três semanas. As recompensas custam 50, 100, 150 ou 200 pontos.
+3. **Cobrança após o serviço:** A marcação não exige pagamento antecipado. Após a conclusão, o cliente ou funcionário autorizado consulta a cobrança, acumula promoções e descontos elegíveis, aplica um voucher uma única vez e regista a simulação eletrónica ou o valor recebido no balcão.
 
-A solução dispõe de um **Assistente de Inteligência Artificial conversacional**, gestão de 3 vagas simultâneas de lavagem, notificações de conclusão, fila ao vivo com estimativa dinâmica de tempo de espera e painéis dedicados para **Cliente**, **Funcionário** e **Administrador / Gestor**.
+A solução dispõe de um **Assistente de Inteligência Artificial conversacional**, gestão de 3 vagas simultâneas de lavagem, notificações de conclusão, fila ao vivo com estimativa dinâmica de tempo de espera, comprovativos de pagamento e painéis dedicados para **Cliente**, **Funcionário** e **Administrador / Gestor**.
 
 ---
 
-## 2. Credenciais de Acesso de Demonstração
+## 2. Acesso e autenticação
 
-Para facilitar a exploração e teste da plataforma, as contas de demonstração já vêm semeadas na base de dados (com hash seguro bcrypt):
+Os utilizadores iniciam sessão individualmente em `/login` com o endereço de email e a palavra-passe da sua conta. O cliente é encaminhado para a área de cliente, o funcionário para a área operacional e o administrador para o painel de gestão. As permissões são também verificadas pela API; terminar sessão remove o token guardado no navegador. Cada utilizador pode alterar a sua palavra-passe em `/seguranca`, confirmando a palavra-passe atual. Funcionários criados pelo gestor têm de substituir a palavra-passe inicial por uma pessoal antes de aceder às restantes áreas, com o bloqueio também aplicado pela API. Na gestão de funcionários, o gestor pode editar o perfil e desativar ou reativar o acesso sem apagar a conta nem o histórico associado; as sessões existentes são invalidadas quando o estado muda.
 
-| Perfil | Nome | Email | Palavra-passe | Funcionalidade Principal |
-| :--- | :--- | :--- | :--- | :--- |
-| **Cliente VIP** | Inácio Cumbane | `cliente@lavaja.co.mz` | `cliente123` | Agendamentos, Saldo Passaporte (30 pts), Vouchers, Histórico |
-| **Funcionário** | Carlos Matsinhe | `funcionario@lavaja.co.mz` | `func123` | Operador de vagas, Iniciar/Concluir lavagem, Validar vouchers |
-| **Administrador** | Nelson Mandlate | `admin@lavaja.co.mz` | `admin123` | Dashboard de KPIs, Edição de preços, Promoções, Capacidade |
+As contas e os respetivos dados permanecem na base de dados atual. As palavras-passe não são documentadas nem incluídas no código: configure-as por um processo administrativo seguro e utilize palavras-passe únicas antes de colocar o sistema em produção. As credenciais antigas de desenvolvimento não devem ser reutilizadas em produção.
 
-> 💡 **Dica de Alternância Rápida:** No topo da aplicação (Barra Superior e Ecrã de Login), existe o menu **«Alternar Perfil Demo»** que permite entrar instantaneamente em qualquer uma das três contas com 1 clique!
+O segredo JWT deve ser definido em `server/.env` com um valor aleatório único de, pelo menos, 32 caracteres. Não reutilize o valor de exemplo. A alteração do segredo invalida as sessões JWT existentes.
 
 ---
 
@@ -54,7 +51,7 @@ Para facilitar a exploração e teste da plataforma, as contas de demonstração
 ## 4. Instruções de Instalação e Execução
 
 ### Pré-requisitos
-- Node.js (v18 ou superior instalado)
+- Node.js (v18.11 ou superior instalado para o modo de desenvolvimento)
 - NPM
 
 ### Passo 1: Inicializar o Backend
@@ -63,7 +60,8 @@ Abra um terminal na pasta do projecto:
 cd server
 npm install
 npm run seed      # Inicializa a base de dados com o cenário completo do Lava Já Matola
-npm start         # Inicia o servidor na porta 5000 (http://localhost:5000)
+npm run dev       # Desenvolvimento: reinicia o servidor quando os arquivos mudam
+# ou npm start    # Início normal, sem reinicialização automática
 ```
 
 ### Passo 2: Inicializar o Frontend
@@ -94,24 +92,37 @@ npm test
 🧪 INICIANDO SUÍTE DE TESTES AUTOMATIZADOS: LAVA JÁ MATOLA
 🧪 ===============================================
   ✅ PASS: Inicialização e Seeding da Base de Dados
+  ✅ PASS: Novo registo recebe apenas os pontos de boas-vindas definidos
+  ✅ PASS: Bónus de três semanas começa após a primeira lavagem concluída e não duplica
+  ✅ PASS: Movimentos antigos são reduzidos às regras atuais e os saldos ajustados
   ✅ PASS: Regras de Disponibilidade: Fora de Horário de Funcionamento
   ✅ PASS: Regras de Disponibilidade: Rejeição de Datas Passadas
-  ✅ PASS: Regras de Capacidade e Conflitos de Reserva (Limite de 3 vagas simultâneas)
-  ✅ PASS: Fluxo e Alteração de Estados da Lavagem (reservado -> aguardando -> em_atendimento -> concluido)
+  ✅ PASS: Regras de Capacidade e Conflitos de Reserva
+  ✅ PASS: Fluxo e Alteração de Estados da Lavagem
   ✅ PASS: Atribuição Única de Pontos de Fidelização (Sem duplicação)
   ✅ PASS: Resgate de Recompensa: Validação de Saldo e Prevenção de Saldo Negativo
   ✅ PASS: Validação de Promoções: Códigos Ativos vs Expirados
   ✅ PASS: Isolamento de Dados: Cliente não acede a dados de outros clientes
   ✅ PASS: Controlo de Acesso por Perfil (JWT e Roles)
+  ✅ PASS: Fluxo de cobrança pós-lavagem, vouchers, pagamentos e permissões
 
 🧪 ===============================================
-🧪 RESULTADO DOS TESTES: 10 PASSOU | 0 FALHOU
+🧪 RESULTADO DOS TESTES: 14 PASSOU | 0 FALHOU
 🧪 ===============================================
 ```
 
 ---
 
-## 6. Assistente de Inteligência Artificial — Modos de Funcionamento
+## 6. Cobranças e comprovativos
+
+1. O cliente cria a marcação sem pagar antecipadamente.
+2. O funcionário inicia e conclui a lavagem. A conclusão atribui os pontos uma única vez, mas mantém a cobrança pendente.
+3. Depois da conclusão, o cliente ou funcionário abre **«Proceder ao Pagamento»**. O preço cobrado é o preço guardado quando a marcação foi criada, mesmo que o catálogo seja alterado depois.
+4. Promoções válidas para a data do serviço ficam registadas na marcação. Um voucher do Passaporte pode acumular com essa promoção; o backend valida o titular, a validade, o estado e o serviço aplicável, limita o desconto ao preço e só consome o voucher na mesma transação em que confirma o pagamento.
+5. As recompensas de serviço (por exemplo, cera ou ambientador) aparecem como benefícios separados; não são confundidas com pontos convertidos em dinheiro. Uma recompensa de serviço associada a uma lavagem gratuita aplica-se apenas ao serviço correspondente.
+6. M-Pesa, e-Mola, mKesh e Moza Banco são **simulações sem integração financeira**. O pagamento no balcão só pode ser confirmado por funcionário ou administrador, depois de receber o valor. O comprovativo distingue pagamentos simulados dos recebimentos no balcão.
+
+## 7. Assistente de Inteligência Artificial — Modos de Funcionamento
 
 O assistente foi projectado para operar em dois modos:
 
@@ -129,7 +140,7 @@ O assistente foi projectado para operar em dois modos:
 
 ---
 
-## 7. Relação de Integrações: Reais vs Simuladas
+## 8. Relação de Integrações: Reais vs Simuladas
 
 | Funcionalidade | Estado da Integração | Descrição Técnica |
 | :--- | :---: | :--- |
@@ -140,11 +151,13 @@ O assistente foi projectado para operar em dois modos:
 | **Assistente Conversacional**| **REAL** | Processamento de intenções via `/api/ai-assistant/chat` apoiado na base de dados. |
 | **Notificações** | **SIMULADA (Interna)**| Sistema de notificações interno com central e badges (sem envio de SMS/WhatsApp externo para não gerar custos). |
 | **Google Maps** | **REAL** | Links e pesquisa direta com coordenadas GPS da Matola. |
-| **Pagamentos / M-Pesa** | **SIMULADA** | Valores reais registados em MT, sem débito bancário real de telecomunicações. |
+| **Pagamentos eletrónicos** | **SIMULADOS (sem cobrança)** | Após a lavagem concluída, M-Pesa, e-Mola, mKesh e Moza Banco geram um comprovativo demonstrativo local. Nenhum fornecedor é contactado nem dinheiro movimentado. |
+| **Pagamento no balcão** | **Registo interno** | Funcionário ou administrador autorizado regista o valor recebido presencialmente e emite um comprovativo. |
+| **Vouchers do Passaporte VIP** | **REAL (na aplicação)** | Resgates deduzem pontos, geram um código de utilização única e só são consumidos atomicamente quando o pagamento associado é confirmado. |
 
 ---
 
-## 8. Roteiro de Apresentação e Demonstração
+## 9. Roteiro de Apresentação e Demonstração
 
 ### Passo 1: Captação de Clientes (Página Inicial Pública)
 1. Mostre a **Página Inicial**: design moderno, cores do sector automóvel, tabela de serviços e preços em Meticais (MT).
@@ -167,21 +180,25 @@ O assistente foi projectado para operar em dois modos:
 1. Aceda a **«Fila ao Vivo»** e mostre as 3 vagas de atendimento com estimativa dinâmica de tempo de espera.
 
 ### Passo 5: Painel Operacional (Funcionário)
-1. Na barra superior, clique em **«Alternar Perfil Demo»** → **Funcionário**.
+1. Inicie sessão em `/login` com as credenciais da conta individual de funcionário.
 2. Veja o serviço na lista. Clique em **«Iniciar Lavagem»** e depois em **«Concluir Lavagem»**.
-3. O veículo é marcado como pronto e os pontos de fidelização são atribuídos ao cliente automaticamente uma única vez!
-4. Valide um voucher de desconto introduzindo o código no validador.
+3. O veículo é marcado como pronto, os pontos são atribuídos uma única vez e o pagamento fica pendente.
+4. Abra **«Proceder ao Pagamento»**, aplique um voucher elegível e selecione uma carteira simulada ou confirme um valor recebido no balcão.
+5. Consulte o comprovativo, que mostra o método, o desconto, o total e se o pagamento foi simulado.
 
 ### Passo 6: Passaporte VIP (Cliente)
-1. Alterne para **Cliente (Inácio Cumbane)**.
+1. Termine a sessão atual e inicie sessão com as credenciais da conta individual do cliente.
 2. Veja a notificação de serviço concluído na campainha.
 3. Aceda a **«Passaporte VIP»**, veja o saldo de pontos aumentado e clique em **«Resgatar Recompensa»** para gerar um novo voucher com código.
-
+4. Use o voucher numa cobrança pendente elegível; os benefícios de serviço e os descontos em MT são apresentados separadamente.
+![alt text](image.png)
 ### Passo 7: Painel do Gestor (Administrador)
-1. Alterne para **Gestor (Nelson Mandlate)**.
+1. Termine a sessão atual e inicie sessão com as credenciais da conta individual do administrador.
 2. Analise os KPIs de faturação diária, clientes novos vs recorrentes e horários de pico.
 3. No separador **«Serviços & Preços»**, altere o preço de um serviço e veja a atualização instantânea em toda a plataforma.
-4. Se necessário, use **«Repor Dados Iniciais»** para reiniciar a demonstração a qualquer momento.
+4. No separador **«Relatórios»**, escolha um período para consultar lavagens, pagamentos recebidos, simulações, descontos e fidelização; exporte os dados em CSV.
+5. Os pagamentos simulados aparecem separados e não contam como dinheiro recebido.
+6. A base comercial não tem uma opção de reposição na aplicação. Os fixtures automatizados são isolados na base de testes e não alteram a base comercial.
 
 ---
 **Lava Já Matola • 2026**

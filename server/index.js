@@ -1,8 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
-const { seedDatabase } = require('./seed');
 
 const authRoutes = require('./routes/auth');
 const servicesRoutes = require('./routes/services');
@@ -16,6 +14,7 @@ const notificationsRoutes = require('./routes/notifications');
 const dashboardRoutes = require('./routes/dashboard');
 const aiRoutes = require('./routes/ai');
 const usersRoutes = require('./routes/users');
+const paymentsRoutes = require('./routes/payments');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -37,8 +36,9 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/ai-assistant', aiRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/payments', paymentsRoutes);
 
-// Health check and demo reset
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
@@ -46,16 +46,6 @@ app.get('/api/health', (req, res) => {
     timezone: 'Africa/Maputo (UTC+2)',
     timestamp: new Date().toISOString()
   });
-});
-
-app.post('/api/reset-demo', (req, res) => {
-  try {
-    seedDatabase();
-    res.json({ success: true, message: 'Base de dados reposta com sucesso para o cenário de demonstração!' });
-  } catch (error) {
-    console.error('Erro ao reiniciar cenário:', error);
-    res.status(500).json({ error: 'Erro ao reiniciar base de dados.' });
-  }
 });
 
 // Centralized error handling

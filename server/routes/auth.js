@@ -92,7 +92,7 @@ router.post('/login', (req, res) => {
     }
 
     const passwordMatch = bcrypt.compareSync(password, user.password_hash);
-    if (!passwordMatch) {
+    if (!passwordMatch || !user.is_active) {
       return res.status(401).json({ error: 'Credenciais inválidas. Verifique o email ou senha.' });
     }
 
@@ -101,7 +101,9 @@ router.post('/login', (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
-      phone: user.phone
+      phone: user.phone,
+      must_change_password: Boolean(user.must_change_password),
+      auth_version: user.auth_version
     };
 
     const token = generateToken(safeUser);
@@ -117,13 +119,46 @@ router.post('/login', (req, res) => {
   }
 });
 
-// Get current user profile
-router.get('/me', authenticateToken, (req, res) => {
+router.post('/change-password', authenticateToken, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+    return res.status(400).json({ error: 'A palavra-passe atual e a nova palavra-passe são obrigatórias.' });
+  }
+
+  if (newPassword.length < 12 || Buffer.byteLength(newPassword, 'utf8') > 72) {
+    return res.status(400).json({ error: 'A nova palavra-passe deve ter pelo menos 12 caracteres e no máximo 72 bytes.' });
+  }
+
   try {
-    const user = db.prepare('SELECT id, name, email, role, phone, created_at FROM users WHERE id = ?').get(req.user.id);
+    const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'Utilizador não encontrado.' });
     }
+
+    if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+      return res.status(401).json({ error: 'A palavra-passe atual está incorreta.' });
+    }
+
+    if (bcrypt.compareSync(newPassword, user.password_hash)) {
+      return res.status(400).json({ error: 'A nova palavra-passe deve ser diferente da atual.' });
+    }
+
+    const passwordHash = bcrypt.hashSync(newPassword, bcrypt.genSaltSync(10));
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(passwordHash, req.user.id);
+    res.json({ message: 'Palavra-passe atualizada com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao atualizar palavra-passe:', error);
+    res.status(500).json({ error: 'Erro interno ao atualizar palavra-passe.' });
+  }
+});
+
+// Get current user profile
+router.get('/me', authenticateToken, (req, res) => {
+  try {
+    const user = db.prepare('SELECT id, name, email, role, phone, created_at, must_change_password, is_active FROM users WHERE id = ?').get(req.user.id);
+    user.must_change_password = Boolean(user.must_change_password);
+    user.is_active = Boolean(user.is_active);
 
     let loyalty = null;
     if (user.role === 'customer') {

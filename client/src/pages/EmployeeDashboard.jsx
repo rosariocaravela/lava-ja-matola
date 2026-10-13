@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Car, CheckCircle2, Clock, Search, ShieldCheck, 
-  AlertCircle, Tag, RefreshCw, Award, ArrowRight, PlusCircle, Sparkles 
+  AlertCircle, Tag, Award, ArrowRight, PlusCircle, Sparkles, ReceiptText
 } from 'lucide-react';
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
+import PaymentPanel from '../components/PaymentPanel';
 
 export default function EmployeeDashboard() {
   const { user } = useAuth();
   const [reservations, setReservations] = useState([]);
   const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -24,11 +24,7 @@ export default function EmployeeDashboard() {
   const [quickSuccess, setQuickSuccess] = useState(null);
   const [quickError, setQuickError] = useState('');
 
-  // Voucher validation form
-  const [voucherCode, setVoucherCode] = useState('');
-  const [voucherResult, setVoucherResult] = useState(null);
-  const [voucherError, setVoucherError] = useState('');
-  const [voucherLoading, setVoucherLoading] = useState(false);
+  const [paymentReservationId, setPaymentReservationId] = useState(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -36,7 +32,6 @@ export default function EmployeeDashboard() {
 
   async function loadDashboardData() {
     try {
-      setLoading(true);
       const today = new Date().toISOString().split('T')[0];
       const [resData, servData] = await Promise.all([
         apiRequest(`/reservations?date=${today}`),
@@ -49,8 +44,6 @@ export default function EmployeeDashboard() {
       }
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -79,6 +72,7 @@ export default function EmployeeDashboard() {
       });
 
       setQuickSuccess(res.reservation);
+      setPaymentReservationId(res.reservation.id);
       setQuickPlate('');
       setQuickName('');
       setQuickPhone('');
@@ -97,34 +91,12 @@ export default function EmployeeDashboard() {
         method: 'PATCH',
         body: JSON.stringify({
           new_status: newStatus,
-          notes: `Concluído e verificado pelo operador ${user.name}`
+          notes: `${newStatus === 'concluido' ? 'Lavagem concluída' : 'Lavagem iniciada'} pelo operador ${user.name}`
         })
       });
       loadDashboardData();
     } catch (err) {
       alert('Erro ao atualizar estado: ' + err.message);
-    }
-  }
-
-  async function handleValidateVoucher(e) {
-    e.preventDefault();
-    if (!voucherCode.trim()) return;
-
-    setVoucherLoading(true);
-    setVoucherError('');
-    setVoucherResult(null);
-
-    try {
-      const res = await apiRequest('/loyalty/validate-voucher', {
-        method: 'PATCH',
-        body: JSON.stringify({ code: voucherCode.trim().toUpperCase() })
-      });
-      setVoucherResult(res);
-      setVoucherCode('');
-    } catch (err) {
-      setVoucherError(err.message);
-    } finally {
-      setVoucherLoading(false);
     }
   }
 
@@ -154,13 +126,6 @@ export default function EmployeeDashboard() {
           </p>
         </div>
 
-        <button
-          onClick={loadDashboardData}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Atualizar Dados</span>
-        </button>
       </div>
 
       {/* Quick Wash Registration Form (Highlight Section) */}
@@ -287,8 +252,10 @@ export default function EmployeeDashboard() {
                   className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700"
                 >
                   <option value="all">Todos</option>
-                  <option value="concluido">Concluídos</option>
                   <option value="reservado">Reservados</option>
+                  <option value="aguardando">Aguardando</option>
+                  <option value="concluido">Concluídos</option>
+                  <option value="cancelado">Cancelados</option>
                 </select>
               </div>
             </div>
@@ -302,6 +269,11 @@ export default function EmployeeDashboard() {
               ) : (
                 filtered.map((r) => {
                   const isDone = r.status === 'concluido';
+                  const nextAction = r.status === 'reservado' || r.status === 'aguardando'
+                    ? { label: 'Iniciar lavagem', status: 'em_atendimento' }
+                    : r.status === 'em_atendimento'
+                      ? { label: 'Concluir Lavagem', status: 'concluido' }
+                      : null;
 
                   return (
                     <div
@@ -322,14 +294,21 @@ export default function EmployeeDashboard() {
                             ({r.vehicle_model})
                           </span>
                           <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                            isDone ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            isDone ? 'bg-emerald-100 text-emerald-800' : r.status === 'em_atendimento' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
                           }`}>
-                            {isDone ? 'Pronto para Levantamento' : 'Agendado'}
+                            {isDone ? r.payment_status === 'pago' ? 'Pago' : 'Lavagem concluída — pagamento pendente' : r.status.replace('_', ' ')}
                           </span>
                         </div>
 
                         <div className="text-xs text-slate-600 mt-1.5 flex flex-wrap gap-x-3">
                           <span>Serviço: <strong>{r.service_name}</strong> ({r.price_mzn} MT)</span>
+                          {isDone && (
+                            <span>Pagamento: <strong className={r.payment_status === 'pago' ? 'text-emerald-700' : 'text-amber-700'}>
+                              {r.payment_status === 'pago'
+                                ? `${r.payment_simulated ? 'Simulação paga' : 'Pago'} — ${r.amount_paid_mzn} MT`
+                                : `${Math.max(0, r.price_mzn - (r.total_discount_mzn || 0))} MT pendentes`}
+                            </strong></span>
+                          )}
                           <span>Condutor: <strong>{r.customer_name}</strong></span>
                           <span>Horário: <strong>{r.scheduled_time}</strong></span>
                         </div>
@@ -343,21 +322,28 @@ export default function EmployeeDashboard() {
 
                       {/* Action buttons */}
                       <div className="flex items-center gap-2 shrink-0">
-                        {!isDone && r.status !== 'cancelado' && (
+                        {nextAction && (
                           <button
-                            onClick={() => updateStatus(r.id, 'concluido')}
+                            onClick={() => updateStatus(r.id, nextAction.status)}
                             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
                           >
                             <CheckCircle2 className="w-4 h-4" />
-                            <span>Marcar como Concluído</span>
+                            <span>{nextAction.label}</span>
                           </button>
                         )}
 
                         {isDone && (
-                          <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 border border-emerald-300 px-3 py-1.5 rounded-xl flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Concluído & Pontos Atribuídos</span>
-                          </span>
+                          <button
+                            onClick={() => setPaymentReservationId(r.id)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                              r.payment_status === 'pago'
+                                ? 'border border-emerald-300 bg-emerald-50 text-emerald-800'
+                                : 'bg-blue-700 text-white hover:bg-blue-800'
+                            }`}
+                          >
+                            <ReceiptText className="h-4 w-4" />
+                            <span>{r.payment_status === 'pago' ? 'Ver comprovativo' : 'Proceder ao Pagamento'}</span>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -368,62 +354,38 @@ export default function EmployeeDashboard() {
           </div>
         </div>
 
-        {/* Right: Voucher Validation & Cashier Tool */}
+        {/* Right: Payment and cashier information */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
             <div className="flex items-center gap-2">
-              <Award className="w-5 h-5 text-amber-500" />
-              <h3 className="font-bold text-sm text-slate-900">Validar Voucher de Recompensa</h3>
+              <ReceiptText className="w-5 h-5 text-blue-600" />
+              <h3 className="font-bold text-sm text-slate-900">Cobranças e comprovativos</h3>
             </div>
-            <p className="text-xs text-slate-500">
-              Quando o cliente apresentar um código de resgate do Passaporte (ex: <strong>RESG-XXXXXX</strong>), valide-o aqui antes de cobrar:
+            <p className="text-xs leading-relaxed text-slate-600">
+              Ao concluir uma lavagem, abra o pagamento correspondente. O voucher só é consumido junto com a confirmação atómica da cobrança.
             </p>
-
-            <form onSubmit={handleValidateVoucher} className="space-y-3">
-              <input
-                type="text"
-                placeholder="Ex: RESG-ABC123"
-                value={voucherCode}
-                onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold tracking-wider uppercase focus:outline-none focus:border-blue-500"
-              />
-              <button
-                type="submit"
-                disabled={voucherLoading || !voucherCode.trim()}
-                className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all cursor-pointer"
-              >
-                {voucherLoading ? 'A verificar...' : 'Validar & Abater Voucher'}
-              </button>
-            </form>
-
-            {voucherResult && (
-              <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-xs space-y-1.5 animate-in fade-in">
-                <div className="font-bold text-emerald-800 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Voucher Válido e Utilizado!</span>
-                </div>
-                <div className="text-emerald-950 font-semibold">{voucherResult.voucher.reward_title}</div>
-                <div className="text-slate-600">Cliente: {voucherResult.voucher.customer_name}</div>
-                <div className="text-slate-600 font-mono">Código: {voucherResult.voucher.redemption_code}</div>
-              </div>
-            )}
-
-            {voucherError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{voucherError}</span>
-              </div>
-            )}
+            <p className="text-[11px] leading-relaxed text-amber-800">
+              M-Pesa, e-Mola, mKesh e Moza Banco continuam simulados. Para dinheiro/POS, confirme apenas depois de receber o valor no balcão.
+            </p>
           </div>
 
           {/* Practical Note */}
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-900 space-y-2">
-            <div className="font-bold">Regras Simples de Balcão:</div>
+            <div className="font-bold">Atendimento no balcão:</div>
             <ul className="list-disc pl-4 space-y-1 text-slate-700">
-              <li>Registe a viatura assim que o serviço estiver terminado para o cliente poder levantar imediatamente.</li>
-              <li>Se introduzir o número de telefone do cliente, os pontos do <strong>Passaporte VIP</strong> entram diretamente na conta dele.</li>
+              <li>Confirme o benefício mostrado antes de o aplicar à conta.</li>
+              <li>O voucher é abatido uma única vez ao validar. Confirme o serviço e o valor restante com o cliente.</li>
+              <li>Registe a lavagem concluída para creditar os pontos na conta associada ao telefone do cliente.</li>
             </ul>
           </div>
+          {paymentReservationId && (
+            <PaymentPanel
+              reservationId={paymentReservationId}
+              userRole={user?.role}
+              onClose={() => setPaymentReservationId(null)}
+              onPaid={loadDashboardData}
+            />
+          )}
         </div>
       </div>
     </div>

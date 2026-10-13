@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { authenticateToken, optionalToken, requireRole } = require('../middleware/auth');
 const { checkAvailability } = require('../utils/scheduling');
+const { getPromotion, roundMzn } = require('../utils/billing');
 
 const router = express.Router();
 
@@ -24,10 +25,15 @@ router.get('/', authenticateToken, (req, res) => {
 
   try {
     let query = `
-      SELECT r.*, s.name as service_name, s.price_mzn, s.points_reward,
+      SELECT r.*, s.name as service_name, COALESCE(p.original_amount_mzn, s.price_mzn) as price_mzn,
+             s.points_reward, p.promotion_code, p.promotion_discount_mzn,
+             p.reward_discount_mzn, p.total_discount_mzn, p.amount_paid_mzn,
+             p.method as payment_method, p.status as payment_status, p.simulated as payment_simulated,
+             p.transaction_reference as payment_reference, p.paid_at as payment_paid_at,
              u.name as registered_user_name, u.email as registered_user_email
       FROM reservations r
       JOIN services s ON r.service_id = s.id
+      LEFT JOIN reservation_payments p ON p.reservation_id = r.id
       LEFT JOIN users u ON r.user_id = u.id
       WHERE 1=1
     `;
@@ -71,9 +77,14 @@ router.get('/:id', authenticateToken, (req, res) => {
 
   try {
     const reservation = db.prepare(`
-      SELECT r.*, s.name as service_name, s.price_mzn, s.points_reward
+      SELECT r.*, s.name as service_name, COALESCE(p.original_amount_mzn, s.price_mzn) as price_mzn,
+             s.points_reward, p.promotion_code, p.promotion_discount_mzn,
+             p.reward_discount_mzn, p.total_discount_mzn, p.amount_paid_mzn,
+             p.method as payment_method, p.status as payment_status, p.simulated as payment_simulated,
+             p.transaction_reference as payment_reference, p.paid_at as payment_paid_at
       FROM reservations r
       JOIN services s ON r.service_id = s.id
+      LEFT JOIN reservation_payments p ON p.reservation_id = r.id
       WHERE r.id = ?
     `).get(id);
 
@@ -111,7 +122,8 @@ router.post('/', optionalToken, (req, res) => {
     service_id,
     scheduled_date,
     scheduled_time,
-    notes
+    notes,
+    promo_code
   } = req.body;
 
   if (!customer_name || !customer_phone || !vehicle_plate || !vehicle_model || !service_id || !scheduled_date || !scheduled_time) {
@@ -123,6 +135,14 @@ router.post('/', optionalToken, (req, res) => {
     if (!service) {
       return res.status(404).json({ error: 'Serviço selecionado não existe ou está inativo.' });
     }
+
+    const { promotion, error: promotionError } = getPromotion(db, promo_code, service.id, scheduled_date);
+    if (promotionError) {
+      return res.status(400).json({ error: promotionError });
+    }
+    const promotionDiscount = promotion
+      ? Math.min(service.price_mzn, roundMzn(service.price_mzn * promotion.discount_percentage / 100))
+      : 0;
 
     // Validate availability and capacity
     const availability = checkAvailability(scheduled_date, scheduled_time, service.duration_minutes);
@@ -168,6 +188,19 @@ router.post('/', optionalToken, (req, res) => {
 
       const reservationId = result.lastInsertRowid;
 
+      db.prepare(`
+        INSERT INTO reservation_payments (
+          reservation_id, original_amount_mzn, promotion_code, promotion_discount_mzn,
+          total_discount_mzn
+        ) VALUES (?, ?, ?, ?, ?)
+      `).run(
+        reservationId,
+        service.price_mzn,
+        promotion?.code || null,
+        promotionDiscount,
+        promotionDiscount
+      );
+
       // Status history entry
       db.prepare(`
         INSERT INTO reservation_status_history (reservation_id, old_status, new_status, changed_by_user_id, notes)
@@ -201,9 +234,12 @@ router.post('/', optionalToken, (req, res) => {
     const newReservationId = createTx();
 
     const createdReservation = db.prepare(`
-      SELECT r.*, s.name as service_name, s.price_mzn, s.points_reward
+      SELECT r.*, s.name as service_name, p.original_amount_mzn as price_mzn,
+             s.points_reward, p.promotion_code, p.promotion_discount_mzn,
+             p.total_discount_mzn, p.amount_paid_mzn, p.status as payment_status
       FROM reservations r
       JOIN services s ON r.service_id = s.id
+      JOIN reservation_payments p ON p.reservation_id = r.id
       WHERE r.id = ?
     `).get(newReservationId);
 
@@ -279,6 +315,11 @@ router.post('/register-completed', authenticateToken, requireRole(['employee', '
 
       const reservationId = result.lastInsertRowid;
 
+      db.prepare(`
+        INSERT INTO reservation_payments (reservation_id, original_amount_mzn)
+        VALUES (?, ?)
+      `).run(reservationId, service.price_mzn);
+
       // History
       db.prepare(`
         INSERT INTO reservation_status_history (reservation_id, old_status, new_status, changed_by_user_id, notes)
@@ -312,9 +353,11 @@ router.post('/register-completed', authenticateToken, requireRole(['employee', '
     const newId = tx();
 
     const created = db.prepare(`
-      SELECT r.*, s.name as service_name, s.price_mzn, s.points_reward
+      SELECT r.*, s.name as service_name, p.original_amount_mzn as price_mzn,
+             s.points_reward, p.total_discount_mzn, p.amount_paid_mzn, p.status as payment_status
       FROM reservations r
       JOIN services s ON r.service_id = s.id
+      JOIN reservation_payments p ON p.reservation_id = r.id
       WHERE r.id = ?
     `).get(newId);
 
@@ -365,10 +408,25 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
       if (['em_atendimento', 'concluido'].includes(reservation.status)) {
         return res.status(400).json({ error: 'Não é possível cancelar uma lavagem em atendimento ou já concluída.' });
       }
+    } else if (!['employee', 'admin'].includes(user.role)) {
+      return res.status(403).json({ error: 'Não tem permissão para alterar esta reserva.' });
     }
 
     if (reservation.status === new_status) {
       return res.json({ message: 'A reserva já se encontra neste estado.', reservation });
+    }
+
+    if (['employee', 'admin'].includes(user.role)) {
+      const allowedTransitions = {
+        reservado: ['aguardando', 'em_atendimento', 'cancelado'],
+        aguardando: ['em_atendimento', 'cancelado'],
+        em_atendimento: ['concluido', 'cancelado']
+      };
+      if (!allowedTransitions[reservation.status]?.includes(new_status)) {
+        return res.status(400).json({
+          error: `Não é possível alterar o estado de "${reservation.status}" para "${new_status}".`
+        });
+      }
     }
 
     // Transaction to update status, track history, handle points attribution & notifications atomically
@@ -454,9 +512,14 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
     updateTx();
 
     const updated = db.prepare(`
-      SELECT r.*, s.name as service_name, s.price_mzn, s.points_reward
+      SELECT r.*, s.name as service_name, p.original_amount_mzn as price_mzn,
+             s.points_reward, p.promotion_code, p.promotion_discount_mzn,
+             p.total_discount_mzn, p.amount_paid_mzn, p.method as payment_method,
+             p.status as payment_status, p.simulated as payment_simulated,
+             p.transaction_reference as payment_reference, p.paid_at as payment_paid_at
       FROM reservations r
       JOIN services s ON r.service_id = s.id
+      LEFT JOIN reservation_payments p ON p.reservation_id = r.id
       WHERE r.id = ?
     `).get(id);
 

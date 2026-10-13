@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 import Navbar from './components/Navbar';
@@ -15,6 +15,7 @@ import CustomerDashboard from './pages/CustomerDashboard';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import LoginPage from './pages/LoginPage';
+import AccountSecurityPage from './pages/AccountSecurityPage';
 import { Bot, Sparkles } from 'lucide-react';
 
 function ProtectedRoute({ children, allowedRoles }) {
@@ -45,6 +46,20 @@ function ProtectedRoute({ children, allowedRoles }) {
 function MainLayout() {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const location = useLocation();
+  const { user, loading } = useAuth();
+
+  if (location.pathname === '/login') {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-900 selection:bg-blue-600 selection:text-white">
+        <LoginPage />
+      </main>
+    );
+  }
+
+  if (!loading && user?.must_change_password && location.pathname !== '/seguranca') {
+    return <Navigate to="/seguranca" replace />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white">
@@ -60,12 +75,20 @@ function MainLayout() {
           <Route path="/fila" element={<QueuePage />} />
           <Route path="/fidelizacao" element={<LoyaltyPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/seguranca"
+            element={
+              <ProtectedRoute>
+                <AccountSecurityPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Dashboards */}
           <Route
             path="/cliente"
             element={
-              <ProtectedRoute allowedRoles={['customer', 'admin']}>
+              <ProtectedRoute allowedRoles={['customer']}>
                 <CustomerDashboard onOpenAi={() => setIsAiOpen(true)} />
               </ProtectedRoute>
             }

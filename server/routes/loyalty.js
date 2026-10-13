@@ -38,15 +38,23 @@ router.get('/me', authenticateToken, (req, res) => {
 
     // Active & used redemptions
     const redemptions = db.prepare(`
-      SELECT r.*, rew.title as reward_title, rew.description as reward_description, rew.discount_mzn
+      SELECT r.*, rew.title as reward_title, rew.description as reward_description,
+             rew.discount_mzn, rew.benefit_type, s.name as reward_service_name
       FROM reward_redemptions r
       JOIN rewards rew ON r.reward_id = rew.id
+      LEFT JOIN services s ON rew.service_id = s.id
       WHERE r.user_id = ?
       ORDER BY r.created_at DESC
     `).all(userId);
 
     // Available rewards to redeem
-    const availableRewards = db.prepare('SELECT * FROM rewards WHERE is_active = 1 ORDER BY points_cost ASC').all();
+    const availableRewards = db.prepare(`
+      SELECT rewards.*, services.name as service_name
+      FROM rewards
+      LEFT JOIN services ON rewards.service_id = services.id
+      WHERE rewards.is_active = 1
+      ORDER BY rewards.points_cost ASC
+    `).all();
 
     res.json({
       balance_points: account.balance_points,
@@ -64,7 +72,13 @@ router.get('/me', authenticateToken, (req, res) => {
 // GET /api/loyalty/rewards - Public list of available rewards
 router.get('/rewards', (req, res) => {
   try {
-    const rewards = db.prepare('SELECT * FROM rewards WHERE is_active = 1 ORDER BY points_cost ASC').all();
+    const rewards = db.prepare(`
+      SELECT rewards.*, services.name as service_name
+      FROM rewards
+      LEFT JOIN services ON rewards.service_id = services.id
+      WHERE rewards.is_active = 1
+      ORDER BY rewards.points_cost ASC
+    `).all();
     res.json(rewards);
   } catch (error) {
     console.error('Erro ao obter recompensas:', error);
@@ -161,10 +175,13 @@ router.patch('/validate-voucher', authenticateToken, requireRole(['employee', 'a
 
   try {
     const voucher = db.prepare(`
-      SELECT r.*, rew.title as reward_title, rew.discount_mzn, u.name as customer_name
+      SELECT r.*, rew.title as reward_title, rew.description as reward_description,
+             rew.discount_mzn, rew.benefit_type, s.name as service_name,
+             u.name as customer_name
       FROM reward_redemptions r
       JOIN rewards rew ON r.reward_id = rew.id
       JOIN users u ON r.user_id = u.id
+      LEFT JOIN services s ON rew.service_id = s.id
       WHERE r.redemption_code = ?
     `).get(code.trim().toUpperCase());
 
@@ -175,19 +192,15 @@ router.patch('/validate-voucher', authenticateToken, requireRole(['employee', 'a
     if (voucher.status === 'utilizado') {
       return res.status(400).json({ error: `Este benefício já foi utilizado em ${voucher.used_at}.` });
     }
-
-    // Mark as used
-    db.prepare(`
-      UPDATE reward_redemptions 
-      SET status = 'utilizado', used_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(voucher.id);
+    if (voucher.status === 'expirado' || (voucher.expires_at && new Date(voucher.expires_at) < new Date())) {
+      return res.status(400).json({ error: 'Este benefício expirou.' });
+    }
 
     res.json({
-      message: 'Benefício validado e utilizado com sucesso!',
+      message: 'Benefício válido. Só será utilizado quando o pagamento associado for confirmado.',
       voucher: {
         ...voucher,
-        status: 'utilizado'
+        status: 'disponivel'
       }
     });
   } catch (error) {
@@ -198,20 +211,26 @@ router.patch('/validate-voucher', authenticateToken, requireRole(['employee', 'a
 
 // Admin: Rewards CRUD
 router.post('/rewards', authenticateToken, requireRole(['admin']), (req, res) => {
-  const { title, description, points_cost, discount_mzn, service_id } = req.body;
+  const { title, description, points_cost, discount_mzn, benefit_type, service_id } = req.body;
   const pointsCost = Number(points_cost);
+  const discountAmount = Number(discount_mzn || 0);
+  const benefitType = benefit_type || 'discount';
 
   if (!title || !Number.isInteger(pointsCost) || pointsCost < MINIMUM_REWARD_POINTS) {
     return res.status(400).json({
       error: `Título obrigatório e custo mínimo de ${MINIMUM_REWARD_POINTS} pontos.`
     });
   }
+  if (!Number.isFinite(discountAmount) || discountAmount < 0 ||
+      !['discount', 'service'].includes(benefitType)) {
+    return res.status(400).json({ error: 'Tipo de benefício ou valor de referência inválido.' });
+  }
 
   try {
     const result = db.prepare(`
-      INSERT INTO rewards (title, description, points_cost, discount_mzn, service_id, is_active)
-      VALUES (?, ?, ?, ?, ?, 1)
-    `).run(title.trim(), description ? description.trim() : null, pointsCost, parseFloat(discount_mzn || 0), service_id || null);
+      INSERT INTO rewards (title, description, points_cost, discount_mzn, benefit_type, service_id, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, 1)
+    `).run(title.trim(), description ? description.trim() : null, pointsCost, discountAmount, benefitType, service_id || null);
 
     const created = db.prepare('SELECT * FROM rewards WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(created);

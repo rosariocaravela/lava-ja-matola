@@ -12,6 +12,7 @@ node_modules/
 dist/
 dist-ssr/
 *.local
+contas-acesso.local.md
 
 # Local SQLite data
 **/*.db

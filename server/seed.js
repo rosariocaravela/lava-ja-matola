@@ -1,9 +1,21 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const path = require('path');
 const db = require('./db');
 const { SERVICE_POINTS_BY_CATEGORY, REWARD_POINT_COSTS, WELCOME_BONUS_POINTS } = require('./config/loyalty');
 
-function seedDatabase() {
-  console.log('--- A inicializar Base de Dados com Dados de Demonstração (Lava Já AI) ---');
+function seedDatabase(testPasswords = {}) {
+  const databasePath = path.resolve(process.env.DB_PATH || path.join(__dirname, 'lavaja.db'));
+  const testDirectory = path.resolve(__dirname, 'test');
+  if (
+    process.env.NODE_ENV !== 'test' ||
+    path.dirname(databasePath) !== testDirectory ||
+    !path.basename(databasePath).startsWith('test_')
+  ) {
+    throw new Error('O seeding está limitado à base isolada de testes.');
+  }
+
+  console.log('--- A inicializar a base isolada de testes do Lava Já ---');
 
   // Clear tables in reverse dependency order
   db.exec(`
@@ -44,11 +56,12 @@ function seedDatabase() {
   `);
   insertSettings.run();
 
-  // Users
+  // Test accounts receive random credentials that are never displayed or logged.
   const salt = bcrypt.genSaltSync(10);
-  const adminPass = bcrypt.hashSync('admin123', salt);
-  const employeePass = bcrypt.hashSync('func123', salt);
-  const customerPass = bcrypt.hashSync('cliente123', salt);
+  const passwordHash = password => bcrypt.hashSync(password || crypto.randomBytes(32).toString('hex'), salt);
+  const adminPass = passwordHash(testPasswords.admin);
+  const employeePass = passwordHash(testPasswords.employee);
+  const customerPass = passwordHash(testPasswords.customer);
 
   const insertUser = db.prepare(`
     INSERT INTO users (name, email, password_hash, role, phone)
@@ -78,8 +91,8 @@ function seedDatabase() {
     INSERT INTO loyalty_accounts (user_id, balance_points, lifetime_points)
     VALUES (?, ?, ?)
   `);
-  const demoCustomerPoints = SERVICE_POINTS_BY_CATEGORY.COMPLETA + WELCOME_BONUS_POINTS;
-  const lAcc1 = insertLoyalty.run(customer1Id, demoCustomerPoints, demoCustomerPoints).lastInsertRowid;
+  const initialCustomerPoints = SERVICE_POINTS_BY_CATEGORY.COMPLETA + WELCOME_BONUS_POINTS;
+  const lAcc1 = insertLoyalty.run(customer1Id, initialCustomerPoints, initialCustomerPoints).lastInsertRowid;
   const lAcc2 = insertLoyalty.run(customer2Id, 0, 0).lastInsertRowid;
 
   // Loyalty Transactions
@@ -92,13 +105,13 @@ function seedDatabase() {
 
   // Rewards
   const insertReward = db.prepare(`
-    INSERT INTO rewards (title, description, points_cost, discount_mzn, service_id, is_active)
-    VALUES (?, ?, ?, ?, ?, 1)
+    INSERT INTO rewards (title, description, points_cost, discount_mzn, benefit_type, service_id, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
   `);
-  insertReward.run('Perfumador de Painel & Ambientador VIP', 'Aplicação de fragrância premium e higienização do tablier.', REWARD_POINT_COSTS.AIR_FRESHENER, 80, null);
-  insertReward.run('Aplicação Gratuita de Cera Protetora', 'Cera de carnaúba de alto brilho sem custo adicional.', REWARD_POINT_COSTS.WAX_APPLICATION, 150, null);
-  insertReward.run('Desconto de 100 MT na Lavagem Completa', 'Abate 100 MZN no valor final da lavagem completa.', REWARD_POINT_COSTS.WASH_DISCOUNT, 100, s2);
-  insertReward.run('Lavagem Exterior Grátis', 'Uma lavagem exterior 100% gratuita por fidelidade.', REWARD_POINT_COSTS.FREE_EXTERIOR_WASH, 250, s1);
+  insertReward.run('Perfumador de Painel & Ambientador VIP', 'Aplicação de fragrância premium e higienização do tablier.', REWARD_POINT_COSTS.AIR_FRESHENER, 80, 'service', null);
+  insertReward.run('Aplicação Gratuita de Cera Protetora', 'Cera de carnaúba de alto brilho sem custo adicional.', REWARD_POINT_COSTS.WAX_APPLICATION, 150, 'service', null);
+  insertReward.run('Desconto de 100 MT na Lavagem Completa', 'Abate 100 MZN no valor final da lavagem completa.', REWARD_POINT_COSTS.WASH_DISCOUNT, 100, 'discount', s2);
+  insertReward.run('Lavagem Exterior Grátis', 'Uma lavagem exterior 100% gratuita por fidelidade.', REWARD_POINT_COSTS.FREE_EXTERIOR_WASH, 250, 'service', s1);
 
   // Promotions
   const insertPromo = db.prepare(`
@@ -174,13 +187,9 @@ function seedDatabase() {
     INSERT INTO audit_logs (user_id, action, entity, entity_id, details)
     VALUES (?, ?, ?, ?, ?)
   `);
-  insertAudit.run(adminId, 'INITIALIZE_SEED', 'system', '1', 'Base de dados inicializada com dados de demonstração');
+  insertAudit.run(adminId, 'TEST_FIXTURE_INITIALIZE', 'system', '1', 'Base isolada de testes inicializada');
 
-  console.log('✅ Base de Dados semeada com sucesso com dados realistas do Lava Já AI!');
-}
-
-if (require.main === module) {
-  seedDatabase();
+  console.log('✅ Base isolada de testes inicializada com sucesso.');
 }
 
 module.exports = { seedDatabase };

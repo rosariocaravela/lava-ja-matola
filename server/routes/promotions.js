@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { getPromotion } = require('../utils/billing');
 
 const router = express.Router();
 
@@ -28,43 +29,26 @@ router.get('/', (req, res) => {
 
 // POST /api/promotions/validate - Validate promo code
 router.post('/validate', (req, res) => {
-  const { code, service_id } = req.body;
+  const { code, service_id, scheduled_date } = req.body;
 
   if (!code) {
     return res.status(400).json({ error: 'Código promocional é obrigatório.' });
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const applicableDate = scheduled_date || new Date().toISOString().split('T')[0];
 
   try {
-    const promo = db.prepare(`
-      SELECT * FROM promotions 
-      WHERE UPPER(code) = ?
-    `).get(code.trim().toUpperCase());
-
-    if (!promo) {
-      return res.status(404).json({ error: 'Código promocional não encontrado.' });
-    }
-
-    if (!promo.is_active) {
-      return res.status(400).json({ error: 'Este código promocional está inativo no momento.' });
-    }
-
-    if (promo.start_date > today || promo.end_date < today) {
-      return res.status(400).json({ error: 'Este código promocional expirou ou ainda não iniciou.' });
-    }
-
-    if (promo.service_id && service_id && promo.service_id !== parseInt(service_id, 10)) {
-      const serv = db.prepare('SELECT name FROM services WHERE id = ?').get(promo.service_id);
-      return res.status(400).json({ error: `Esta promoção é válida apenas para o serviço: ${serv ? serv.name : 'específico'}.` });
+    const { promotion, error } = getPromotion(db, code, service_id, applicableDate);
+    if (error) {
+      return res.status(error.includes('não encontrado') ? 404 : 400).json({ error });
     }
 
     res.json({
       valid: true,
-      code: promo.code,
-      title: promo.title,
-      discount_percentage: promo.discount_percentage,
-      service_id: promo.service_id
+      code: promotion.code,
+      title: promotion.title,
+      discount_percentage: promotion.discount_percentage,
+      service_id: promotion.service_id
     });
   } catch (error) {
     console.error('Erro ao validar promoção:', error);
@@ -92,9 +76,11 @@ router.get('/all', authenticateToken, requireRole(['admin']), (req, res) => {
 // Admin: Create promotion
 router.post('/', authenticateToken, requireRole(['admin']), (req, res) => {
   const { title, description, code, discount_percentage, service_id, start_date, end_date } = req.body;
+  const discountPercentage = Number(discount_percentage);
 
-  if (!title || !code || !discount_percentage || !start_date || !end_date) {
-    return res.status(400).json({ error: 'Título, código, percentagem e datas são obrigatórios.' });
+  if (!title || !code || !start_date || !end_date ||
+      !Number.isInteger(discountPercentage) || discountPercentage < 1 || discountPercentage > 100) {
+    return res.status(400).json({ error: 'Título, código, percentagem entre 1 e 100 e datas válidas são obrigatórios.' });
   }
 
   try {
@@ -112,7 +98,7 @@ router.post('/', authenticateToken, requireRole(['admin']), (req, res) => {
       title.trim(),
       description ? description.trim() : null,
       code.trim().toUpperCase(),
-      parseInt(discount_percentage, 10),
+      discountPercentage,
       service_id ? parseInt(service_id, 10) : null,
       start_date,
       end_date
@@ -143,6 +129,23 @@ router.patch('/:id/toggle', authenticateToken, requireRole(['admin']), (req, res
   } catch (error) {
     console.error('Erro ao alternar estado da promoção:', error);
     res.status(500).json({ error: 'Erro ao atualizar promoção.' });
+  }
+});
+
+// Admin: Permanently remove a promotion
+router.delete('/:id', authenticateToken, requireRole(['admin']), (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = db.prepare('DELETE FROM promotions WHERE id = ?').run(id);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Campanha não encontrada.' });
+    }
+
+    res.json({ message: 'Campanha removida com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao remover campanha:', error);
+    res.status(500).json({ error: 'Erro ao remover campanha.' });
   }
 });
 

@@ -1,7 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
-const { getPointsForCategory, REWARD_POINT_COSTS, MINIMUM_REWARD_POINTS } = require('./config/loyalty');
+const { REWARD_POINT_COSTS, MINIMUM_REWARD_POINTS } = require('./config/loyalty');
 const { normalizeLegacyLoyaltyBonuses } = require('./utils/loyalty-migration');
 
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'lavaja.db');
@@ -117,6 +117,7 @@ function initSchema() {
       description TEXT,
       points_cost INTEGER NOT NULL,
       discount_mzn REAL DEFAULT 0,
+      benefit_type TEXT NOT NULL DEFAULT 'discount' CHECK(benefit_type IN ('discount', 'service')),
       service_id INTEGER,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -132,8 +133,31 @@ function initSchema() {
       status TEXT CHECK(status IN ('disponivel', 'utilizado', 'expirado')) NOT NULL DEFAULT 'disponivel',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       used_at DATETIME,
+      expires_at DATETIME,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (reward_id) REFERENCES rewards(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS reservation_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reservation_id INTEGER UNIQUE NOT NULL,
+      original_amount_mzn REAL NOT NULL CHECK(original_amount_mzn >= 0),
+      promotion_code TEXT,
+      promotion_discount_mzn REAL NOT NULL DEFAULT 0 CHECK(promotion_discount_mzn >= 0),
+      reward_code TEXT,
+      reward_discount_mzn REAL NOT NULL DEFAULT 0 CHECK(reward_discount_mzn >= 0),
+      reward_title TEXT,
+      reward_description TEXT,
+      reward_service_name TEXT,
+      total_discount_mzn REAL NOT NULL DEFAULT 0 CHECK(total_discount_mzn >= 0),
+      amount_paid_mzn REAL NOT NULL DEFAULT 0 CHECK(amount_paid_mzn >= 0),
+      method TEXT CHECK(method IN ('mpesa', 'emola', 'mkesh', 'mozabanco', 'balcao')),
+      status TEXT NOT NULL DEFAULT 'pendente' CHECK(status IN ('pendente', 'pago', 'falhado', 'cancelado')),
+      simulated INTEGER NOT NULL DEFAULT 0 CHECK(simulated IN (0, 1)),
+      transaction_reference TEXT UNIQUE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      paid_at DATETIME,
+      FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS promotions (
@@ -177,6 +201,26 @@ function initSchema() {
   `;
 
   db.exec(schema);
+  ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('users', 'is_active', 'INTEGER NOT NULL DEFAULT 1');
+  ensureColumn('users', 'auth_version', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('rewards', 'benefit_type', "TEXT NOT NULL DEFAULT 'discount' CHECK(benefit_type IN ('discount', 'service'))");
+  ensureColumn('reward_redemptions', 'expires_at', 'DATETIME');
+
+  db.prepare(`
+    UPDATE rewards
+    SET benefit_type = 'service'
+    WHERE title LIKE 'Perfumador de Painel%'
+       OR title LIKE 'Aplicação Gratuita de Cera%'
+       OR title LIKE 'Lavagem Exterior Grátis%'
+  `).run();
+  db.prepare(`
+    INSERT OR IGNORE INTO reservation_payments (reservation_id, original_amount_mzn)
+    SELECT r.id, s.price_mzn
+    FROM reservations r
+    JOIN services s ON s.id = r.service_id
+  `).run();
+
   db.prepare(`
     UPDATE business_settings
     SET name = 'Lava Já Matola - Lavagem rápida e de confiança'
@@ -189,10 +233,6 @@ function initSchema() {
     );
   }
 
-  const updateServicePoints = db.prepare('UPDATE services SET points_reward = ? WHERE id = ?');
-  for (const service of db.prepare('SELECT id, category FROM services').all()) {
-    updateServicePoints.run(getPointsForCategory(service.category), service.id);
-  }
   db.prepare("UPDATE rewards SET points_cost = ? WHERE title LIKE 'Perfumador de Painel%'")
     .run(REWARD_POINT_COSTS.AIR_FRESHENER);
   db.prepare("UPDATE rewards SET points_cost = ? WHERE title LIKE 'Aplicação Gratuita de Cera%'")
@@ -203,6 +243,13 @@ function initSchema() {
     .run(REWARD_POINT_COSTS.FREE_EXTERIOR_WASH);
   db.prepare('UPDATE rewards SET points_cost = ? WHERE points_cost < ?')
     .run(MINIMUM_REWARD_POINTS, MINIMUM_REWARD_POINTS);
+}
+
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some(existing => existing.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
 }
 
 initSchema();

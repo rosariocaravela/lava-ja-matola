@@ -46,7 +46,9 @@ export default function BookingPage() {
   useEffect(() => {
     if (user && !customerName) {
       setCustomerName(user.name);
-      if (user.phone) setCustomerPhone(user.phone);
+      if (user.phone) {
+        setCustomerPhone(user.phone);
+      }
     }
   }, [user]);
 
@@ -89,7 +91,8 @@ export default function BookingPage() {
         method: 'POST',
         body: JSON.stringify({
           code: promoCode.trim().toUpperCase(),
-          service_id: selectedServiceId
+          service_id: selectedServiceId,
+          scheduled_date: selectedDate
         })
       });
       setAppliedPromo(res);
@@ -123,6 +126,7 @@ export default function BookingPage() {
         service_id: parseInt(selectedServiceId, 10),
         scheduled_date: selectedDate,
         scheduled_time: selectedTime,
+        promo_code: appliedPromo?.code || null,
         notes: notes.trim() + (appliedPromo ? ` [Promo: ${appliedPromo.code} - ${appliedPromo.discount_percentage}%]` : '')
       };
 
@@ -193,6 +197,13 @@ export default function BookingPage() {
                 <span className="font-semibold text-white">{confirmedReservation.service_name}</span>
               </div>
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 text-left">
+            <h3 className="font-bold text-sm text-blue-950">Sem pagamento antecipado</h3>
+            <p className="mt-2 text-xs leading-relaxed text-blue-900">
+              O pagamento só fica disponível depois de o funcionário marcar a lavagem como concluída. Nessa altura poderá usar M-Pesa, e-Mola, mKesh, Moza Banco (simulados) ou pagar no balcão.
+            </p>
           </div>
 
           <div className="flex">
@@ -438,7 +449,7 @@ export default function BookingPage() {
               )}
             </div>
 
-            {/* Price Summary */}
+              {/* Price Summary */}
             <div className="pt-3 border-t border-slate-200 space-y-2 text-xs">
               <div className="flex justify-between text-slate-600">
                 <span>Serviço Base:</span>

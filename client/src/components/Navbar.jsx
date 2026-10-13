@@ -2,18 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Sparkles, Car, Calendar, Users, Award, Shield, Clock, 
-  Bell, LogIn, LogOut, ChevronDown, Bot, Menu, X, RotateCcw
+  Bell, LogIn, LogOut, Bot, Menu, X, KeyRound
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../api';
 
 export default function Navbar({ onOpenAi, onOpenNotifications }) {
-  const { user, loyalty, logout, quickSwitchDemo } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [demoMenuOpen, setDemoMenuOpen] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -32,16 +31,10 @@ export default function Navbar({ onOpenAi, onOpenNotifications }) {
     }
   }
 
-  async function handleResetDemo() {
-    if (window.confirm('Deseja repor a base de dados para o estado inicial de demonstração?')) {
-      try {
-        await apiRequest('/reset-demo', { method: 'POST' });
-        alert('Base de dados restaurada com sucesso!');
-        window.location.reload();
-      } catch (err) {
-        alert('Erro ao reiniciar: ' + err.message);
-      }
-    }
+  function handleLogout() {
+    logout();
+    setMobileMenuOpen(false);
+    navigate('/');
   }
 
   const navLinks = [
@@ -53,67 +46,10 @@ export default function Navbar({ onOpenAi, onOpenNotifications }) {
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 text-white">
-      {/* Top Demo Bar */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 px-4 py-1 text-xs text-white flex justify-between items-center">
+      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 px-4 py-1 text-xs text-white">
         <div className="flex items-center gap-2">
           <span className="font-semibold tracking-wide uppercase text-[10px] bg-white/20 px-2 py-0.5 rounded">Lava Já Matola</span>
           <span className="hidden sm:inline text-blue-100">Lavagem rápida e de confiança • Matola, Moçambique</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Quick Demo Switcher */}
-          <div className="relative">
-            <button
-              onClick={() => setDemoMenuOpen(!demoMenuOpen)}
-              className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-2.5 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors"
-            >
-              <span>Alternar Perfil Demo</span>
-              <ChevronDown className="w-3 h-3" />
-            </button>
-
-            {demoMenuOpen && (
-              <div className="absolute right-0 mt-1 w-56 bg-white text-slate-800 rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 text-xs">
-                <div className="px-3 py-1 font-semibold text-slate-400 border-b border-slate-100 uppercase text-[10px]">Perfis de Demonstração</div>
-                <button
-                  onClick={() => { quickSwitchDemo('customer'); setDemoMenuOpen(false); navigate('/cliente'); }}
-                  className="w-full text-left px-3 py-2 hover:bg-blue-50 flex items-center justify-between cursor-pointer"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">Cliente (Inácio Cumbane)</div>
-                    <div className="text-[10px] text-slate-500">Saldo: {loyalty?.balance_points ?? 0} pts • Agendamentos</div>
-                  </div>
-                  <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-mono">cliente</span>
-                </button>
-                <button
-                  onClick={() => { quickSwitchDemo('employee'); setDemoMenuOpen(false); navigate('/funcionario'); }}
-                  className="w-full text-left px-3 py-2 hover:bg-emerald-50 flex items-center justify-between cursor-pointer"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">Funcionário (Carlos Matsinhe)</div>
-                    <div className="text-[10px] text-slate-500">Operador de Vagas e Fila</div>
-                  </div>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-mono">func</span>
-                </button>
-                <button
-                  onClick={() => { quickSwitchDemo('admin'); setDemoMenuOpen(false); navigate('/admin'); }}
-                  className="w-full text-left px-3 py-2 hover:bg-purple-50 flex items-center justify-between cursor-pointer"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-800">Gestor (Nelson Mandlate)</div>
-                    <div className="text-[10px] text-slate-500">Painel Geral • Preços • Config</div>
-                  </div>
-                  <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-mono">admin</span>
-                </button>
-                <div className="border-t border-slate-100 mt-1 pt-1">
-                  <button
-                    onClick={() => { handleResetDemo(); setDemoMenuOpen(false); }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600 flex items-center gap-1.5 cursor-pointer font-medium"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" /> Repor Dados Iniciais
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -199,8 +135,16 @@ export default function Navbar({ onOpenAi, onOpenNotifications }) {
                   <div className="text-[10px] text-blue-400 capitalize">{user.role === 'customer' ? 'Cliente' : user.role === 'employee' ? 'Funcionário' : 'Gestor'}</div>
                 </div>
               </Link>
+              <Link
+                to="/seguranca"
+                className="p-2 text-slate-400 hover:text-blue-300 hover:bg-slate-800 rounded-xl transition-colors"
+                title="Alterar palavra-passe"
+                aria-label="Alterar palavra-passe"
+              >
+                <KeyRound className="w-4 h-4" />
+              </Link>
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
                 title="Terminar Sessão"
               >
@@ -247,6 +191,34 @@ export default function Navbar({ onOpenAi, onOpenNotifications }) {
               className="block px-3 py-2 rounded-lg text-sm font-medium text-blue-400 bg-slate-900 border border-slate-800"
             >
               Ir para o meu Painel ({user.role})
+            </Link>
+          )}
+          {user && (
+            <Link
+              to="/seguranca"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-200 hover:bg-slate-800"
+            >
+              <KeyRound className="w-4 h-4" />
+              Alterar palavra-passe
+            </Link>
+          )}
+          {user ? (
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-red-300 hover:bg-slate-800"
+            >
+              <LogOut className="w-4 h-4" />
+              Terminar Sessão
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-blue-300 hover:bg-slate-800"
+            >
+              <LogIn className="w-4 h-4" />
+              Entrar
             </Link>
           )}
         </div>

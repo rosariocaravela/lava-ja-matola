@@ -29,10 +29,22 @@ router.get('/all', authenticateToken, requireRole(['admin']), (req, res) => {
 
 // Admin: Create service
 router.post('/', authenticateToken, requireRole(['admin']), (req, res) => {
-  const { name, description, category, price_mzn, duration_minutes } = req.body;
+  const { name, description, category, price_mzn, duration_minutes, points_reward } = req.body;
+  const parsedPrice = Number(price_mzn);
+  const parsedDuration = Number(duration_minutes);
+  const parsedPoints = points_reward === undefined ? null : Number(points_reward);
 
-  if (!name || !price_mzn || !duration_minutes) {
-    return res.status(400).json({ error: 'Nome, preço e duração são obrigatórios.' });
+  if (!name || !name.trim() || !Number.isFinite(parsedPrice) || parsedPrice <= 0 ||
+      !Number.isSafeInteger(parsedDuration) || parsedDuration <= 0) {
+    return res.status(400).json({ error: 'Nome, preço maior que zero e duração em minutos são obrigatórios.' });
+  }
+  if (points_reward !== undefined && (
+    points_reward === null ||
+    points_reward === '' ||
+    !Number.isSafeInteger(parsedPoints) ||
+    parsedPoints < 0
+  )) {
+    return res.status(400).json({ error: 'Os pontos atribuídos devem ser um número inteiro igual ou superior a zero.' });
   }
 
   try {
@@ -45,9 +57,9 @@ router.post('/', authenticateToken, requireRole(['admin']), (req, res) => {
       name.trim(),
       description ? description.trim() : '',
       category || 'Geral',
-      parseFloat(price_mzn),
-      parseInt(duration_minutes, 10),
-      getPointsForCategory(category || 'Geral')
+      parsedPrice,
+      parsedDuration,
+      parsedPoints === null ? getPointsForCategory(category || 'Geral') : parsedPoints
     );
 
     const newService = db.prepare('SELECT * FROM services WHERE id = ?').get(result.lastInsertRowid);
@@ -61,12 +73,26 @@ router.post('/', authenticateToken, requireRole(['admin']), (req, res) => {
 // Admin: Update service
 router.put('/:id', authenticateToken, requireRole(['admin']), (req, res) => {
   const { id } = req.params;
-  const { name, description, category, price_mzn, duration_minutes, is_active } = req.body;
+  const { name, description, category, price_mzn, duration_minutes, points_reward, is_active } = req.body;
 
   try {
     const existing = db.prepare('SELECT * FROM services WHERE id = ?').get(id);
     if (!existing) {
       return res.status(404).json({ error: 'Serviço não encontrado.' });
+    }
+
+    const parsedPrice = price_mzn !== undefined ? Number(price_mzn) : existing.price_mzn;
+    const parsedPoints = points_reward !== undefined ? Number(points_reward) : null;
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json({ error: 'O preço deve ser um número maior que zero.' });
+    }
+    if (points_reward !== undefined && (
+      points_reward === null ||
+      points_reward === '' ||
+      !Number.isSafeInteger(parsedPoints) ||
+      parsedPoints < 0
+    )) {
+      return res.status(400).json({ error: 'Os pontos atribuídos devem ser um número inteiro igual ou superior a zero.' });
     }
 
     const stmt = db.prepare(`
@@ -79,9 +105,13 @@ router.put('/:id', authenticateToken, requireRole(['admin']), (req, res) => {
       name !== undefined ? name.trim() : existing.name,
       description !== undefined ? description.trim() : existing.description,
       category !== undefined ? category : existing.category,
-      price_mzn !== undefined ? parseFloat(price_mzn) : existing.price_mzn,
+      parsedPrice,
       duration_minutes !== undefined ? parseInt(duration_minutes, 10) : existing.duration_minutes,
-      getPointsForCategory(category !== undefined ? category : existing.category),
+      parsedPoints !== null
+        ? parsedPoints
+        : category !== undefined
+          ? getPointsForCategory(category)
+          : existing.points_reward,
       is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
       id
     );

@@ -22,6 +22,7 @@ export function AuthProvider({ children }) {
       const data = await apiRequest('/auth/me');
       setUser(data.user);
       setLoyalty(data.loyalty);
+      return data.user;
     } catch (err) {
       console.warn('Sessão expirada:', err);
       logout();
@@ -37,8 +38,7 @@ export function AuthProvider({ children }) {
     });
     localStorage.setItem('lavaja_token', data.token);
     setUser(data.user);
-    await loadProfile();
-    return data.user;
+    return await loadProfile();
   }
 
   async function register(name, email, password, phone) {
@@ -58,17 +58,6 @@ export function AuthProvider({ children }) {
     setLoyalty(null);
   }
 
-  // Quick switch for demonstration during the hackathon
-  async function quickSwitchDemo(role) {
-    if (role === 'admin') {
-      return login('admin@lavaja.co.mz', 'admin123');
-    } else if (role === 'employee') {
-      return login('funcionario@lavaja.co.mz', 'func123');
-    } else if (role === 'customer') {
-      return login('cliente@lavaja.co.mz', 'cliente123');
-    }
-  }
-
   return (
     <AuthContext.Provider
       value={{
@@ -78,7 +67,6 @@ export function AuthProvider({ children }) {
         login,
         register,
         logout,
-        quickSwitchDemo,
         refreshProfile: loadProfile,
       }}
     >
