@@ -89,7 +89,7 @@ function MainLayout() {
             path="/cliente"
             element={
               <ProtectedRoute allowedRoles={['customer']}>
-                <CustomerDashboard onOpenAi={() => setIsAiOpen(true)} />
+                <CustomerDashboard />
               </ProtectedRoute>
             }
           />

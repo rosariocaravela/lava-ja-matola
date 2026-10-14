@@ -36,6 +36,7 @@ const { awardRecurringBonusIfDue, RECURRING_BONUS_DESCRIPTION } = require('../ut
 const { normalizeLegacyLoyaltyBonuses } = require('../utils/loyalty-migration');
 const { generateToken } = require('../middleware/auth');
 const reservationsRoutes = require('../routes/reservations');
+const aiRoutes = require('../routes/ai');
 const paymentsRoutes = require('../routes/payments');
 const servicesRoutes = require('../routes/services');
 const promotionsRoutes = require('../routes/promotions');
@@ -380,6 +381,45 @@ async function runTests() {
         headers: { Authorization: `Bearer ${customerLogin.token}` }
       });
       assert.strictEqual(customerStaffResponse.status, 403);
+    } finally {
+      await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  });
+
+  await testAsync('Assistente recomenda serviços reais conforme o cuidado automóvel pedido', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/ai-assistant', aiRoutes);
+    const server = app.listen(0, '127.0.0.1');
+
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const baseUrl = `http://127.0.0.1:${server.address().port}/api/ai-assistant/chat`;
+      const examples = [
+        { message: 'Qual serviço recomenda para limpar os bancos e estofos?', category: 'Especializada' },
+        { message: 'Qual serviço inclui cera para dar brilho e proteger a pintura?', category: 'Premium' },
+        { message: 'Qual lavagem recomenda para limpar o motor?', category: 'Mecânica' },
+        { message: 'Qual serviço recomenda para lavar o carro todo?', category: 'Completa' }
+      ];
+
+      for (const example of examples) {
+        const service = db.prepare('SELECT id, name FROM services WHERE category = ? AND is_active = 1').get(example.category);
+        const response = await fetch(baseUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: example.message })
+        });
+        const data = await response.json();
+        assert.strictEqual(response.status, 200);
+        assert.ok(data.reply.includes(service.name), `Deve recomendar ${service.name}`);
+        assert.ok(
+          data.suggestedActions.some(action => action.action === 'book' && action.serviceId === service.id),
+          `Deve permitir marcar ${service.name}`
+        );
+      }
     } finally {
       await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }

@@ -1,24 +1,32 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Send, Sparkles, X, User, CornerDownRight, ExternalLink, Calendar, CheckCircle2 } from 'lucide-react';
+import { Bot, Send, Sparkles, X, User, CornerDownRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest } from '../api';
+
+function formatMessage(text) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : part
+  );
+}
 
 export default function AiAssistantModal({ isOpen, onClose }) {
   const navigate = useNavigate();
   const [messages, setMessages] = useState([
     {
       sender: 'ai',
-      text: 'Olá! Sou o **Assistente Lava Já Matola**.\nComo posso ajudar? Posso consultar serviços, preços e disponibilidade de horários.',
+      text: 'Olá! Sou o **Assistente Lava Já Matola**. Diga-me que cuidado o seu carro precisa — posso recomendar uma lavagem, explicar os serviços e preços ou ajudar com uma marcação.',
       actions: [
-        { label: 'Ver Serviços e Preços', prompt: 'Quais são os serviços e preços?' },
-        { label: 'Horários para amanhã', prompt: 'Quais os horários livres para amanhã?' },
-        { label: 'Onde fica o estabelecimento?', prompt: 'Onde fica a vossa localização?' }
+        { label: 'Limpar bancos e estofos', prompt: 'Qual serviço recomenda para limpar os bancos e estofos?' },
+        { label: 'Brilho e proteção da pintura', prompt: 'Qual serviço inclui cera para dar brilho e proteger a pintura?' },
+        { label: 'Ver serviços e preços', prompt: 'Quais são os serviços e preços?' },
+        { label: 'Marcar uma lavagem', prompt: 'Quero marcar uma lavagem' }
       ]
     }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [aiMode, setAiMode] = useState('demo_conversational_engine');
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -41,8 +49,6 @@ export default function AiAssistantModal({ isOpen, onClose }) {
         method: 'POST',
         body: JSON.stringify({ message: text }),
       });
-
-      if (data.aiMode) setAiMode(data.aiMode);
 
       setMessages(prev => [
         ...prev,
@@ -93,7 +99,7 @@ export default function AiAssistantModal({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col h-[600px] max-h-[90vh] overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col h-[680px] max-h-[90vh] overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 p-4 text-white flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-3">
@@ -103,12 +109,8 @@ export default function AiAssistantModal({ isOpen, onClose }) {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-base">Assistente Lava Já Matola</h3>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse"></span>
-                  Online
-                </span>
               </div>
-              <p className="text-xs text-blue-100/80">Conectado aos dados em tempo real da oficina</p>
+              <p className="text-xs text-blue-100/80">Serviços, cuidados, preços e marcações</p>
             </div>
           </div>
           <button 
@@ -134,7 +136,7 @@ export default function AiAssistantModal({ isOpen, onClose }) {
                   : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-xs'
               }`}>
                 <div className="whitespace-pre-line leading-relaxed">
-                  {msg.text}
+                  {formatMessage(msg.text)}
                 </div>
 
                 {/* Suggested Action Chips */}
@@ -170,7 +172,7 @@ export default function AiAssistantModal({ isOpen, onClose }) {
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce"></span>
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:0.2s]"></span>
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:0.4s]"></span>
-                <span className="text-slate-500 font-medium">A consultar horários e dados do sistema...</span>
+                <span className="text-slate-500 font-medium">A preparar uma resposta para si...</span>
               </div>
             </div>
           )}
@@ -190,7 +192,7 @@ export default function AiAssistantModal({ isOpen, onClose }) {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Pergunte sobre preços, horários ou ref. LJ-XXXX..."
+              placeholder="Descreva o cuidado que o seu carro precisa..."
               className="flex-1 px-4 py-2.5 text-sm bg-slate-100 rounded-xl border border-transparent focus:border-blue-500 focus:bg-white focus:outline-none transition-all"
             />
             <button

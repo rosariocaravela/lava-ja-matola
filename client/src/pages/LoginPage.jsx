@@ -207,6 +207,36 @@ export default function LoginPage() {
                 </button>
               </form>
 
+              {!isRegister && (
+                <div className="mt-5" aria-label="Opções de acesso social, ainda indisponíveis">
+                  <div className="relative mb-4">
+                    <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                      <div className="w-full border-t border-slate-100" />
+                    </div>
+                    <p className="relative mx-auto w-fit bg-white px-3 text-xs text-slate-400">
+                      Acesso social em breve
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-500">
+                      <svg aria-hidden="true" viewBox="0 0 48 48" className="h-5 w-5">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z" />
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.74 7.18l7.73 6C44.43 37.96 46.98 31.9 46.98 24.55Z" />
+                        <path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.12.76-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.87.93 7.54 2.56 10.78l7.97-6.19Z" transform="translate(0 0)" />
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.14 1.44-4.89 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z" />
+                      </svg>
+                      Google
+                    </div>
+                    <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-500">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 fill-[#1877F2]">
+                        <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.97h-1.513c-1.49 0-1.956.93-1.956 1.884v2.267h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073Z" />
+                      </svg>
+                      Facebook
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="mt-6 border-t border-slate-100 pt-5 text-center">
                 <p className="text-sm text-slate-500">
                   {isRegister ? 'Já tem uma conta?' : 'Ainda não tem conta?'}{' '}

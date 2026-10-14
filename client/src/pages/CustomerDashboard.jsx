@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Car, Calendar, Award, Clock, ArrowRight, XCircle, 
-  CheckCircle2, Bot, Bell, Shield, Sparkles, ReceiptText
+  CheckCircle2, Bell, Shield, Sparkles, ReceiptText
 } from 'lucide-react';
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
 import PaymentPanel from '../components/PaymentPanel';
 
-export default function CustomerDashboard({ onOpenAi }) {
+export default function CustomerDashboard() {
   const { user, loyalty, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
@@ -87,13 +87,6 @@ export default function CustomerDashboard({ onOpenAi }) {
             <Calendar className="w-4 h-4" />
             <span>Nova Marcação</span>
           </Link>
-          <button
-            onClick={onOpenAi}
-            className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all border border-white/20 cursor-pointer flex items-center gap-2"
-          >
-            <Bot className="w-4 h-4 text-blue-300" />
-            <span>Falar com IA</span>
-          </button>
         </div>
       </div>
 

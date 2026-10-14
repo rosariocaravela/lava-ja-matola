@@ -7,7 +7,7 @@
 
 ## 1. Visão Geral
 
-O **Lava Já Matola** é uma plataforma digital completa criada para modernizar e dinamizar o negócio de lavagem automóvel (car wash) na Matola, respondendo a dois desafios centrais:
+O **Lava Já Matola** é uma platafoddrma digital completa criada para modernizar e dinamizar o negócio de lavagem automóvel (car wash) na Matola, respondendo a dois desafios centrais:
 
 1. **Captação de Novos Clientes:** Acesso digital transparente aos serviços, horários e preços em Meticais (MT), localização integrada com rota no Google Maps e agendamento inteligente sem conflitos de capacidade.
 2. **Fidelização Contínua:** O programa **«Passaporte Lava Já»** credita 10 pontos de boas-vindas, 10 pontos por lavagem básica, 20 por completa, 25 por lavagem de motor, 30 por lavagem premium e 40 por higienização especializada. Após a primeira lavagem concluída, credita mais 10 pontos a cada três semanas. As recompensas custam 50, 100, 150 ou 200 pontos.

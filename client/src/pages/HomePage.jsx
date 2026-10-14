@@ -12,7 +12,6 @@ export default function HomePage({ onOpenAi }) {
   const [services, setServices] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [settings, setSettings] = useState(null);
-  const [queueSummary, setQueueSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [openFaq, setOpenFaq] = useState(null);
 
@@ -23,17 +22,15 @@ export default function HomePage({ onOpenAi }) {
   async function loadHomeData() {
     try {
       setLoading(true);
-      const [srvData, promoData, settData, queueData] = await Promise.all([
+      const [srvData, promoData, settData] = await Promise.all([
         apiRequest('/services'),
         apiRequest('/promotions'),
-        apiRequest('/settings'),
-        apiRequest('/queue')
+        apiRequest('/settings')
       ]);
 
       setServices(srvData);
       setPromotions(promoData);
       setSettings(settData);
-      setQueueSummary(queueData);
     } catch (err) {
       console.error('Erro ao carregar dados da página inicial:', err);
     } finally {
@@ -64,6 +61,13 @@ export default function HomePage({ onOpenAi }) {
     <div className="space-y-16 pb-16">
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-white pt-12 pb-20 sm:pt-20 sm:pb-28">
+        <img
+          src="/images.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-900/70 to-slate-900/45"></div>
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(59,130,246,0.3),rgba(255,255,255,0))]"></div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
@@ -74,7 +78,7 @@ export default function HomePage({ onOpenAi }) {
               </div>
 
               <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-tight">
-                Lavagem Automóvel Inteligente <span className="bg-gradient-to-r from-blue-400 via-teal-300 to-blue-200 bg-clip-text text-transparent">Sem Perder Tempo</span>
+                Lavagem de qualidade, <span className="bg-gradient-to-r from-blue-400 via-teal-300 to-blue-200 bg-clip-text text-transparent">sem perder tempo.</span>
               </h1>
 
               <p className="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed">
@@ -91,13 +95,6 @@ export default function HomePage({ onOpenAi }) {
                   <ArrowRight className="w-4 h-4" />
                 </Link>
 
-                <Link
-                  to="/fila"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-sm transition-all cursor-pointer"
-                >
-                  <Clock className="w-4 h-4 text-blue-400" />
-                  <span>Ver Fila em Tempo Real</span>
-                </Link>
               </div>
 
               {/* Stats badges */}

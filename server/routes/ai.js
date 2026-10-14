@@ -34,13 +34,56 @@ router.post('/chat', optionalToken, async (req, res) => {
 
     // INTENT DETECTION
 
+    // Intent: Recommend a wash based on the vehicle area or finish requested
+    const wantsEngineCare = query.includes('motor');
+    const wantsInteriorDetail = ['estof', 'banco', 'assento', 'ar condicionado', 'cheiro', 'odor']
+      .some(term => query.includes(term));
+    const wantsInteriorCare = ['estof', 'banco', 'assento', 'interior', 'ar condicionado', 'cheiro', 'odor']
+      .some(term => query.includes(term));
+    const wantsPaintProtection = ['cera', 'brilho', 'pintura', 'pneu']
+      .some(term => query.includes(term));
+    const wantsExteriorCare = ['exterior', 'jante', 'rápida', 'rapida']
+      .some(term => query.includes(term));
+    const wantsCompleteWash = ['completa', 'carro todo', 'interior e exterior']
+      .some(term => query.includes(term));
+
+    let recommendedCategory = null;
+    if (wantsEngineCare) recommendedCategory = 'Mecânica';
+    else if (wantsInteriorDetail) recommendedCategory = 'Especializada';
+    else if (wantsPaintProtection) recommendedCategory = 'Premium';
+    else if (wantsCompleteWash) recommendedCategory = 'Completa';
+    else if (wantsInteriorCare) recommendedCategory = 'Especializada';
+    else if (wantsExteriorCare) recommendedCategory = 'Básica';
+
+    if (recommendedCategory && (query.includes('recomenda') || query.includes('melhor') || query.includes('qual') || query.includes('preciso') || query.includes('quero') || query.includes('limpar') || query.includes('cuidar'))) {
+      const recommendedService = services.find(service =>
+        service.category?.toLowerCase() === recommendedCategory.toLowerCase()
+      );
+
+      if (recommendedService) {
+        responseText = `Para o que pretende, recomendo **${recommendedService.name}**.\n${recommendedService.description}\n\n**Preço:** ${recommendedService.price_mzn} MT · **Duração:** cerca de ${recommendedService.duration_minutes} min · **Pontos:** +${recommendedService.points_reward} pts.`;
+        suggestedActions = [
+          { label: 'Agendar este serviço', action: 'book', serviceId: recommendedService.id },
+          { label: 'Ver serviços e preços', action: 'services' }
+        ];
+      } else {
+        responseText = 'Não encontrei um serviço específico para esse cuidado na lista atual. Posso mostrar todos os serviços disponíveis para ajudar a escolher.';
+        suggestedActions = [
+          { label: 'Ver serviços e preços', action: 'services' },
+          { label: 'Falar com a equipa', action: 'location' }
+        ];
+      }
+    }
     // Intent: Preços / Serviços
-    if (query.includes('serviço') || query.includes('servico') || query.includes('preço') || query.includes('preco') || query.includes('quanto custa') || query.includes('lavagem') && !query.includes('marcar') && !query.includes('reservar')) {
+    else if (query.includes('serviço') || query.includes('servico') || query.includes('preço') || query.includes('preco') || query.includes('quanto custa') || query.includes('lavagem') && !query.includes('marcar') && !query.includes('reservar')) {
       const listStr = services.map(s => `• **${s.name}**: ${s.price_mzn} MT (${s.duration_minutes} min, acumula +${s.points_reward} pts)`).join('\n');
       responseText = `No **Lava Já Matola**, temos os seguintes serviços disponíveis:\n\n${listStr}\n\nPretende agendar algum destes serviços? Posso verificar os horários livres para si!`;
       suggestedActions = [
-        { label: 'Marcar Lavagem Rápida (250 MT)', action: 'book', serviceId: services[0]?.id },
-        { label: 'Marcar Lavagem Completa (450 MT)', action: 'book', serviceId: services[1]?.id },
+        ...services.slice(0, 2).map(service => ({
+          label: `Agendar ${service.name} (${service.price_mzn} MT)`,
+          action: 'book',
+          serviceId: service.id
+        })),
         { label: 'Ver Promoções Ativas', action: 'promos' }
       ];
     }
