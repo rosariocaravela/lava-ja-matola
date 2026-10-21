@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, Building2, CheckCircle2, LoaderCircle, Smartphone, X } from 'lucide-react';
+import { AlertCircle, Building2, CheckCircle2, Download, LoaderCircle, Smartphone, X } from 'lucide-react';
 import { apiRequest } from '../api';
 
 const PAYMENT_METHODS = [
@@ -14,6 +14,16 @@ const METHOD_LABELS = Object.fromEntries(PAYMENT_METHODS.map(method => [method.i
 
 function formatMoney(amount) {
   return `${Number(amount || 0).toLocaleString('pt-MZ')} MT`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
 }
 
 export default function PaymentPanel({ reservationId, userRole, onClose, onPaid }) {
@@ -87,6 +97,80 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
   const reservation = summary?.reservation;
   const isPaid = payment?.status === 'pago';
   const selectedMethod = PAYMENT_METHODS.find(option => option.id === method);
+
+  function handleDownloadReceipt() {
+    const receiptDate = payment.paid_at
+      ? new Date(payment.paid_at).toLocaleString('pt-MZ')
+      : '';
+    const amountRows = [
+      `<div class="row"><span>Preço original</span><strong>${escapeHtml(formatMoney(payment.original_amount_mzn))}</strong></div>`,
+      payment.promotion_discount_mzn > 0
+        ? `<div class="row discount"><span>Promoção ${escapeHtml(payment.promotion_code ? `(${payment.promotion_code})` : '')}</span><strong>−${escapeHtml(formatMoney(payment.promotion_discount_mzn))}</strong></div>`
+        : '',
+      payment.reward_discount_mzn > 0
+        ? `<div class="row discount"><span>Desconto do Passaporte${payment.reward_title ? ` (${escapeHtml(payment.reward_title)})` : ''}</span><strong>−${escapeHtml(formatMoney(payment.reward_discount_mzn))}</strong></div>`
+        : '',
+      `<div class="row total"><span>Total pago</span><strong>${escapeHtml(formatMoney(payment.amount_paid_mzn))}</strong></div>`
+    ].join('');
+    const simulationNotice = payment.simulated
+      ? '<p class="notice">Comprovativo demonstrativo — nenhum dinheiro foi movimentado.</p>'
+      : '<p class="notice">Pagamento recebido.</p>';
+    const html = `<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Comprovativo ${escapeHtml(reservation.reference_code)} — Lava Já Matola</title>
+    <style>
+      body { margin: 0; padding: 32px 16px; background: #f1f5f9; color: #0f172a; font: 15px/1.5 Arial, sans-serif; }
+      main { box-sizing: border-box; max-width: 680px; margin: 0 auto; padding: 32px; border: 1px solid #e2e8f0; border-radius: 18px; background: white; }
+      h1 { margin: 4px 0 24px; font-size: 25px; }
+      .brand { color: #2563eb; font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
+      .details { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 18px; border-radius: 14px; background: #f8fafc; }
+      .field span, .label { display: block; color: #64748b; font-size: 13px; }
+      .field strong { display: block; overflow-wrap: anywhere; }
+      .amounts { margin-top: 20px; padding: 18px; border: 1px solid #e2e8f0; border-radius: 14px; }
+      .row { display: flex; justify-content: space-between; gap: 16px; margin: 8px 0; }
+      .discount { color: #047857; }
+      .total { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e2e8f0; font-size: 19px; font-weight: 700; }
+      .notice { margin: 18px 0 0; padding: 16px; border: 1px solid #a7f3d0; border-radius: 14px; background: #ecfdf5; color: #064e3b; font-weight: 700; }
+      .meta { margin-top: 10px; color: #334155; font-size: 13px; }
+      .print { display: block; margin: 22px auto 0; padding: 12px 20px; border: 0; border-radius: 10px; background: #2563eb; color: white; font-size: 15px; font-weight: 700; cursor: pointer; }
+      @media (max-width: 480px) { .details { grid-template-columns: 1fr; } main { padding: 22px; } }
+      @media print { body { padding: 0; background: white; } main { max-width: none; border: 0; } .print { display: none; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand">Lava Já Matola</div>
+      <h1>Comprovativo de pagamento</h1>
+      <section class="details">
+        <div class="field"><span>Referência</span><strong>${escapeHtml(reservation.reference_code)}</strong></div>
+        <div class="field"><span>Estado do serviço</span><strong>${escapeHtml(reservation.service_status.replace('_', ' '))}</strong></div>
+        <div class="field"><span>Cliente</span><strong>${escapeHtml(reservation.customer_name)}</strong></div>
+        <div class="field"><span>Matrícula</span><strong>${escapeHtml(reservation.vehicle_plate)}</strong></div>
+        <div class="field"><span>Serviço</span><strong>${escapeHtml(reservation.service_name)}</strong></div>
+      </section>
+      <section class="amounts">${amountRows}</section>
+      ${simulationNotice}
+      <div class="meta">Método: <strong>${escapeHtml(METHOD_LABELS[payment.method] || payment.method)}</strong></div>
+      <div class="meta">Referência da transação: <strong>${escapeHtml(payment.transaction_reference)}</strong></div>
+      ${receiptDate ? `<div class="meta">Data: <strong>${escapeHtml(receiptDate)}</strong></div>` : ''}
+      <button class="print" onclick="window.print()">Imprimir / Guardar como PDF</button>
+    </main>
+  </body>
+</html>`;
+    const file = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    const safeReference = String(reservation.reference_code).replace(/[^a-z0-9-]/gi, '-');
+    link.href = url;
+    link.download = `comprovativo-${safeReference}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="presentation">
@@ -175,6 +259,14 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
                 <div className="mt-2">Método: <strong>{METHOD_LABELS[payment.method] || payment.method}</strong></div>
                 <div className="mt-1">Referência da transação: <strong className="font-mono">{payment.transaction_reference}</strong></div>
                 {payment.paid_at && <div className="mt-1">Data: {new Date(payment.paid_at).toLocaleString('pt-MZ')}</div>}
+                <button
+                  type="button"
+                  onClick={handleDownloadReceipt}
+                  className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Baixar comprovativo
+                </button>
               </div>
             ) : (
               <>

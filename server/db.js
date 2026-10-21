@@ -226,6 +226,33 @@ function initSchema() {
     SET name = 'Lava Já Matola - Lavagem rápida e de confiança'
     WHERE name = 'Lava Já Matola - Car Wash Inteligente'
   `).run();
+  db.prepare(`
+    UPDATE services
+    SET name = CASE name
+      WHEN 'Lavagem Exterior Rápida' THEN 'Lavagem Exterior'
+      WHEN 'Lavagem Completa (Exterior + Interior)' THEN 'Lavagem Completa'
+      WHEN 'Lavagem Técnica de Motor a Vapor' THEN 'Lavagem do Motor'
+      WHEN 'Lavagem VIP Premium com Cera' THEN 'Lavagem Completa Premium'
+      WHEN 'Lavagem Completa com Cera' THEN 'Lavagem Completa Premium'
+      WHEN 'Higienização de Estofos & Ar Condicionado' THEN 'Limpeza de Estofos e Interior'
+    END,
+    description = CASE name
+      WHEN 'Lavagem Exterior Rápida' THEN 'Lavagem da parte exterior da viatura, limpeza das jantes e secagem.'
+      WHEN 'Lavagem Completa (Exterior + Interior)' THEN 'Lavagem exterior, aspiração do interior, limpeza do painel e aplicação de ambientador.'
+      WHEN 'Lavagem Técnica de Motor a Vapor' THEN 'Limpeza do motor para remover gordura e sujidade, com cuidado para proteger os componentes.'
+      WHEN 'Lavagem VIP Premium com Cera' THEN 'Lavagem exterior e interior, com aplicação de cera para brilho e proteção da pintura.'
+      WHEN 'Lavagem Completa com Cera' THEN 'Lavagem exterior e interior, com aplicação de cera para brilho e proteção da pintura.'
+      WHEN 'Higienização de Estofos & Ar Condicionado' THEN 'Limpeza profunda dos bancos e do teto da viatura, incluindo as saídas do ar condicionado.'
+    END
+    WHERE name IN (
+      'Lavagem Exterior Rápida',
+      'Lavagem Completa (Exterior + Interior)',
+      'Lavagem Técnica de Motor a Vapor',
+      'Lavagem VIP Premium com Cera',
+      'Lavagem Completa com Cera',
+      'Higienização de Estofos & Ar Condicionado'
+    )
+  `).run();
   const loyaltyMigration = normalizeLegacyLoyaltyBonuses(db);
   if (loyaltyMigration.updatedTransactions > 0) {
     console.log(

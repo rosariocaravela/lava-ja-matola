@@ -58,7 +58,7 @@ export default function CustomerDashboard() {
     }
   }
 
-  const activeWash = reservations.find(r => ['em_atendimento', 'aguardando'].includes(r.status));
+  const activeWash = reservations.find(r => r.status === 'em_atendimento');
   const nextReservation = reservations.find(r => r.status === 'reservado');
 
   return (
@@ -225,11 +225,18 @@ export default function CustomerDashboard() {
                 reservations.map((r) => {
                   const statusColors = {
                     reservado: 'bg-indigo-100 text-indigo-800 border-indigo-200',
-                    aguardando: 'bg-amber-100 text-amber-800 border-amber-200',
+                    aguardando: 'bg-indigo-100 text-indigo-800 border-indigo-200',
                     em_atendimento: 'bg-blue-100 text-blue-800 border-blue-200',
                     concluido: 'bg-emerald-100 text-emerald-800 border-emerald-200',
                     cancelado: 'bg-red-100 text-red-800 border-red-200',
                   };
+                  const customerStatus = ['reservado', 'aguardando'].includes(r.status)
+                    ? 'Agendado'
+                    : r.status === 'em_atendimento'
+                      ? 'Lavagem em andamento'
+                      : r.status === 'concluido'
+                        ? 'Lavagem concluída'
+                        : r.status;
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50 transition-colors">
@@ -251,7 +258,7 @@ export default function CustomerDashboard() {
                       </td>
                       <td className="p-3.5">
                         <span className={`inline-flex whitespace-nowrap px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase ${statusColors[r.status] || 'bg-slate-100'}`}>
-                          {r.status === 'concluido' ? 'Lavagem concluída' : r.status.replace('_', ' ')}
+                          {customerStatus}
                         </span>
                       </td>
                       <td className="p-3.5">

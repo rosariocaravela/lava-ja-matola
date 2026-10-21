@@ -1022,7 +1022,7 @@ async function runTests() {
     const otherCustomer = db.prepare("SELECT id, name, email, role FROM users WHERE email = 'maria@gmail.com'").get();
     const employee = db.prepare("SELECT id, name, email, role FROM users WHERE role = 'employee' LIMIT 1").get();
     const fullWash = db.prepare("SELECT id, price_mzn, points_reward FROM services WHERE name LIKE 'Lavagem Completa%'").get();
-    const exteriorWash = db.prepare("SELECT id, price_mzn FROM services WHERE name = 'Lavagem Exterior Rápida'").get();
+    const exteriorWash = db.prepare("SELECT id, price_mzn FROM services WHERE name = 'Lavagem Exterior'").get();
     const discountReward = db.prepare("SELECT id FROM rewards WHERE title = 'Desconto de 100 MT na Lavagem Completa'").get();
     const freeWashReward = db.prepare("SELECT id FROM rewards WHERE title = 'Lavagem Exterior Grátis'").get();
     const now = new Date();
@@ -1198,7 +1198,7 @@ async function runTests() {
       const freePreview = await request(`/api/payments/${freeServiceReservation.id}/preview-voucher`, tokens.customer, 'POST', { code: freeCode });
       assert.strictEqual(freePreview.response.status, 200, freePreview.data.error);
       assert.strictEqual(freePreview.data.payment.amount_due_mzn, 0, 'Benefício de serviço aplicável cobre o preço do serviço correspondente.');
-      assert.strictEqual(freePreview.data.payment.reward_service_name, 'Lavagem Exterior Rápida');
+      assert.strictEqual(freePreview.data.payment.reward_service_name, 'Lavagem Exterior');
 
       const receiptAccess = await request(`/api/payments/${promoReservation.id}`, tokens.customer);
       assert.strictEqual(receiptAccess.response.status, 200, `Consulta do comprovativo: ${JSON.stringify(receiptAccess.data)}`);

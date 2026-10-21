@@ -80,11 +80,11 @@ function seedDatabase(testPasswords = {}) {
     VALUES (?, ?, ?, ?, ?, ?, 1)
   `);
 
-  const s1 = insertService.run('Lavagem Exterior Rápida', 'Lavagem com espuma ativa, secagem com microfibra e limpeza de jantes básicas.', 'Básica', 250, 25, SERVICE_POINTS_BY_CATEGORY.BÁSICA).lastInsertRowid;
-  const s2 = insertService.run('Lavagem Completa (Exterior + Interior)', 'Lavagem exterior de alta pressão, aspiração interior aprofundada, higienização do painel e ambientador suave.', 'Completa', 450, 40, SERVICE_POINTS_BY_CATEGORY.COMPLETA).lastInsertRowid;
-  const s3 = insertService.run('Lavagem VIP Premium com Cera', 'Lavagem completa com cera carnaúba de alto brilho, hidratação de plásticos exteriores e pretinho nos pneus de longa duração.', 'Premium', 750, 60, SERVICE_POINTS_BY_CATEGORY.PREMIUM).lastInsertRowid;
-  const s4 = insertService.run('Higienização de Estofos & Ar Condicionado', 'Lavagem a seco com extração profunda de sujidade dos bancos, teto e oxisanitização dos dutos do A/C.', 'Especializada', 1200, 90, SERVICE_POINTS_BY_CATEGORY.ESPECIALIZADA).lastInsertRowid;
-  const s5 = insertService.run('Lavagem Técnica de Motor a Vapor', 'Desengorduramento meticuloso do motor com vapor seco e aplicação de verniz protetor anti-humidade.', 'Mecânica', 600, 45, SERVICE_POINTS_BY_CATEGORY.MECÂNICA).lastInsertRowid;
+  const s1 = insertService.run('Lavagem Exterior', 'Lavagem da parte exterior da viatura, limpeza das jantes e secagem.', 'Básica', 250, 25, SERVICE_POINTS_BY_CATEGORY.BÁSICA).lastInsertRowid;
+  const s2 = insertService.run('Lavagem Completa', 'Lavagem exterior, aspiração do interior, limpeza do painel e aplicação de ambientador.', 'Completa', 450, 40, SERVICE_POINTS_BY_CATEGORY.COMPLETA).lastInsertRowid;
+  const s3 = insertService.run('Lavagem Completa Premium', 'Lavagem exterior e interior, com aplicação de cera para brilho e proteção da pintura.', 'Premium', 750, 60, SERVICE_POINTS_BY_CATEGORY.PREMIUM).lastInsertRowid;
+  const s4 = insertService.run('Limpeza de Estofos e Interior', 'Limpeza profunda dos bancos e do teto da viatura, incluindo as saídas do ar condicionado.', 'Especializada', 1200, 90, SERVICE_POINTS_BY_CATEGORY.ESPECIALIZADA).lastInsertRowid;
+  const s5 = insertService.run('Lavagem do Motor', 'Limpeza do motor para remover gordura e sujidade, com cuidado para proteger os componentes.', 'Mecânica', 600, 45, SERVICE_POINTS_BY_CATEGORY.MECÂNICA).lastInsertRowid;
 
   // Loyalty Accounts
   const insertLoyalty = db.prepare(`

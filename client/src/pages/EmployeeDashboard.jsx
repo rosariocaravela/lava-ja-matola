@@ -12,7 +12,7 @@ export default function EmployeeDashboard() {
   const [reservations, setReservations] = useState([]);
   const [services, setServices] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('active');
 
   // Quick completed wash registration form
   const [quickPlate, setQuickPlate] = useState('');
@@ -28,19 +28,21 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     loadDashboardData();
+    const interval = window.setInterval(loadDashboardData, 15000);
+    return () => window.clearInterval(interval);
   }, []);
 
   async function loadDashboardData() {
     try {
       const today = new Date().toISOString().split('T')[0];
       const [resData, servData] = await Promise.all([
-        apiRequest(`/reservations?date=${today}`),
+        apiRequest(`/reservations?from_date=${today}`),
         apiRequest('/services')
       ]);
       setReservations(resData);
       setServices(servData);
-      if (servData.length > 0 && !quickServiceId) {
-        setQuickServiceId(servData[0].id.toString());
+      if (servData.length > 0) {
+        setQuickServiceId(current => current || servData[0].id.toString());
       }
     } catch (err) {
       console.error(err);
@@ -107,6 +109,7 @@ export default function EmployeeDashboard() {
       r.customer_name.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (statusFilter === 'all') return matchesSearch;
+    if (statusFilter === 'active') return matchesSearch && r.status !== 'cancelado';
     return matchesSearch && r.status === statusFilter;
   });
 
@@ -231,7 +234,7 @@ export default function EmployeeDashboard() {
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Atendimentos & Marcações de Hoje ({reservations.length})
+                Reservas e atendimentos futuros ({filtered.length})
               </h2>
 
               {/* Search & Filter */}
@@ -251,6 +254,7 @@ export default function EmployeeDashboard() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                   className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700"
                 >
+                  <option value="active">Ativos</option>
                   <option value="all">Todos</option>
                   <option value="reservado">Reservados</option>
                   <option value="aguardando">Aguardando</option>
@@ -264,7 +268,7 @@ export default function EmployeeDashboard() {
             <div className="space-y-3">
               {filtered.length === 0 ? (
                 <div className="text-center py-10 text-slate-400 text-xs">
-                  Nenhum atendimento correspondente encontrado para hoje.
+                  Nenhuma reserva ou atendimento correspondente encontrado.
                 </div>
               ) : (
                 filtered.map((r) => {
@@ -310,7 +314,7 @@ export default function EmployeeDashboard() {
                             </strong></span>
                           )}
                           <span>Condutor: <strong>{r.customer_name}</strong></span>
-                          <span>Horário: <strong>{r.scheduled_time}</strong></span>
+                          <span>Data e hora: <strong>{r.scheduled_date} às {r.scheduled_time}</strong></span>
                         </div>
 
                         {r.notes && (

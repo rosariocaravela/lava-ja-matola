@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 
 export default function Footer() {
   return (
-    <footer className="bg-slate-950 text-slate-300 border-t border-slate-800 text-sm">
+    <footer className="bg-slate-950 text-slate-300 border-t border-slate-800 text-base">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
@@ -13,20 +13,20 @@ export default function Footer() {
               <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
                 <Car className="w-5 h-5" />
               </div>
-              <span className="font-black text-lg text-white">Lava Já <span className="text-blue-400">Matola</span></span>
+              <span className="font-black text-xl text-white">Lava Já <span className="text-blue-400">Matola</span></span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-sm text-slate-300 leading-7">
               Agende a lavagem, acompanhe a fila e ganhe pontos no Passaporte VIP.
             </p>
-            <div className="text-[11px] text-blue-400 font-medium">
+            <div className="text-sm text-blue-300 font-medium leading-6">
               Lava Já Matola — Excelência em Limpeza Automóvel
             </div>
           </div>
 
           {/* Quick Links */}
           <div>
-            <h4 className="text-white font-semibold mb-3 text-xs uppercase tracking-wider">Navegação</h4>
-            <ul className="space-y-2 text-xs">
+            <h4 className="text-white font-semibold mb-4 text-lg">Navegação</h4>
+            <ul className="space-y-3 text-sm">
               <li><Link to="/" className="hover:text-blue-400 transition-colors">Início</Link></li>
               <li><Link to="/reservar" className="hover:text-blue-400 transition-colors">Marcar Lavagem</Link></li>
               <li><Link to="/fila" className="hover:text-blue-400 transition-colors">Fila de Atendimento</Link></li>
@@ -36,8 +36,8 @@ export default function Footer() {
 
           {/* Business Info */}
           <div>
-            <h4 className="text-white font-semibold mb-3 text-xs uppercase tracking-wider">Localização & Horário</h4>
-            <ul className="space-y-2.5 text-xs text-slate-400">
+            <h4 className="text-white font-semibold mb-4 text-lg">Localização & Horário</h4>
+            <ul className="space-y-3 text-sm text-slate-300 leading-6">
               <li className="flex items-start gap-2">
                 <MapPin className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                 <span>Av. da Matola, Paragem Padaria, Matola</span>
@@ -59,15 +59,15 @@ export default function Footer() {
 
           {/* Maps CTA */}
           <div>
-            <h4 className="text-white font-semibold mb-3 text-xs uppercase tracking-wider">Como Chegar</h4>
-            <p className="text-xs text-slate-400 mb-3">
+            <h4 className="text-white font-semibold mb-4 text-lg">Como Chegar</h4>
+            <p className="text-sm text-slate-300 leading-6 mb-4">
               Estamos localizados na Avenida da Matola, com acesso facilitado e estacionamento amplo.
             </p>
             <a
               href="https://maps.google.com/?q=Matola,+Mocambique"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-xl text-xs font-medium border border-slate-700 transition-all"
+              className="inline-flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-xl text-sm font-medium border border-slate-700 transition-all"
             >
               <MapPin className="w-4 h-4 text-blue-400" />
               <span>Abrir no Google Maps</span>
@@ -76,11 +76,11 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="mt-8 pt-6 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 gap-4">
+        <div className="mt-8 pt-6 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-center text-sm text-slate-400 gap-4">
           <div>
             © 2026 Lava Já Matola. Todos os direitos reservados.
           </div>
-          <div className="flex items-center gap-1 text-[11px]">
+          <div className="flex items-center gap-1 text-xs">
             <span>Criado com tecnologia inteligente para o Lava Já Matola</span>
           </div>
         </div>

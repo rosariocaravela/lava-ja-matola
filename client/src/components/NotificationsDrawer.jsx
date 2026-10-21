@@ -11,6 +11,8 @@ export default function NotificationsDrawer({ isOpen, onClose }) {
   useEffect(() => {
     if (isOpen && user) {
       loadNotifications();
+      const interval = window.setInterval(loadNotifications, 15000);
+      return () => window.clearInterval(interval);
     }
   }, [isOpen, user]);
 

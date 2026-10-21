@@ -7,13 +7,29 @@
 
 ## 1. Visão Geral
 
-O **Lava Já Matola** é uma platafoddrma digital completa criada para modernizar e dinamizar o negócio de lavagem automóvel (car wash) na Matola, respondendo a dois desafios centrais:
+O **Lava Já Matola** é uma plataforma digital completa criada para modernizar e dinamizar o negócio de lavagem automóvel na Matola, respondendo a dois desafios centrais:
 
 1. **Captação de Novos Clientes:** Acesso digital transparente aos serviços, horários e preços em Meticais (MT), localização integrada com rota no Google Maps e agendamento inteligente sem conflitos de capacidade.
 2. **Fidelização Contínua:** O programa **«Passaporte Lava Já»** credita 10 pontos de boas-vindas, 10 pontos por lavagem básica, 20 por completa, 25 por lavagem de motor, 30 por lavagem premium e 40 por higienização especializada. Após a primeira lavagem concluída, credita mais 10 pontos a cada três semanas. As recompensas custam 50, 100, 150 ou 200 pontos.
 3. **Cobrança após o serviço:** A marcação não exige pagamento antecipado. Após a conclusão, o cliente ou funcionário autorizado consulta a cobrança, acumula promoções e descontos elegíveis, aplica um voucher uma única vez e regista a simulação eletrónica ou o valor recebido no balcão.
 
 A solução dispõe de um **Assistente de Inteligência Artificial conversacional**, gestão de 3 vagas simultâneas de lavagem, notificações de conclusão, fila ao vivo com estimativa dinâmica de tempo de espera, comprovativos de pagamento e painéis dedicados para **Cliente**, **Funcionário** e **Administrador / Gestor**.
+
+### Serviços disponíveis
+
+O catálogo inicial apresenta serviços com nomes simples e descrições diretas. Os preços, durações e pontos podem ser ajustados pelo administrador:
+
+| Serviço | Preço inicial | Duração | Pontos |
+| :--- | ---: | ---: | ---: |
+| Lavagem Exterior | 250 MT | 25 min | 10 |
+| Lavagem Completa | 450 MT | 40 min | 20 |
+| Lavagem do Motor | 600 MT | 45 min | 25 |
+| Lavagem Completa Premium | 750 MT | 60 min | 30 |
+| Limpeza de Estofos e Interior | 1.200 MT | 90 min | 40 |
+
+### Fluxo de agendamento
+
+O agendamento é apresentado em duas etapas. Na primeira, o cliente escolhe o serviço, a data e um horário disponível; o botão **«Avançar»** só fica ativo depois de selecionar serviço e horário. A barra de progresso indica 50% nesta etapa e 100% na etapa seguinte. Na segunda, o cliente preenche os dados da viatura e contacto, pode aplicar um código promocional e confirma a reserva. É possível voltar para alterar o serviço ou horário.
 
 ---
 
@@ -31,7 +47,7 @@ O segredo JWT deve ser definido em `server/.env` com um valor aleatório único 
 
 ### Frontend
 - **Framework:** React 19 + Vite 8
-- **Estilização:** Tailwind CSS v4 (Design moderno e automotivo em tons de azul, branco e verde)
+- **Estilização:** Tailwind CSS v4, com tipografia Inter e layout responsivo em tons de azul, branco e verde
 - **Navegação:** React Router DOM v7
 - **Ícones:** Lucide React
 - **Arquitetura:** Componentes modulares, AuthContext reativo e consumo de API REST.
@@ -44,35 +60,49 @@ O segredo JWT deve ser definido em `server/.env` com um valor aleatório único 
 ### Persistência de Dados
 - **Base de Dados Principal:** SQLite através do módulo de alta performance `better-sqlite3` com WAL mode (Write-Ahead Logging) ativo e integridade referencial por chaves forasteiras.
 - **Ficheiro de Persistência:** `server/lavaja.db` (garante persistência integral entre reinícios do servidor).
-- **Compatibilidade PostgreSQL:** O schema foi modelado de acordo com o padrão relacional (tabelas `users`, `services`, `reservations`, `loyalty_accounts`, `rewards`, `promotions`, `notifications`, `business_settings`, etc.) e pode ser migrado diretamente via variáveis de ambiente.
+- **Motor configurado:** SQLite. Apesar de o modelo usar tabelas relacionais, não existe configuração ativa para trocar o SQLite por PostgreSQL através de variáveis de ambiente.
 
 ---
 
 ## 4. Instruções de Instalação e Execução
 
 ### Pré-requisitos
-- Node.js (v18.11 ou superior instalado para o modo de desenvolvimento)
+- Node.js (v20.19+ ou v22.12+)
 - NPM
 
-### Passo 1: Inicializar o Backend
-Abra um terminal na pasta do projecto:
+### Passo 1: Instalar dependências
+Na pasta raiz do projeto:
 ```bash
-cd server
-npm install
-npm run seed      # Inicializa a base de dados com o cenário completo do Lava Já Matola
-npm run dev       # Desenvolvimento: reinicia o servidor quando os arquivos mudam
-# ou npm start    # Início normal, sem reinicialização automática
+npm run install:all
 ```
 
-### Passo 2: Inicializar o Frontend
-Abra um segundo terminal:
-```bash
-cd client
-npm install
-npm run dev       # Inicia a aplicação web na porta 3000 (http://localhost:3000)
+### Passo 2: Configurar o backend
+Crie `server/.env` a partir de `server/.env.example` e defina um segredo JWT exclusivo. No PowerShell:
+```powershell
+Copy-Item server\.env.example server\.env
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-Abra o seu navegador em: **`http://localhost:3000`**
+Copie o valor gerado para `JWT_SECRET` em `server/.env`. O ficheiro também permite configurar `PORT` (predefinição `5000`), `DB_PATH` (predefinição `./lavaja.db`) e, opcionalmente, `GEMINI_API_KEY` ou `OPENAI_API_KEY`. Não partilhe nem versione `server/.env`.
+
+A aplicação cria e atualiza o esquema SQLite ao iniciar. Os dados de teste do `server/seed.js` são exclusivos da suíte automatizada e não devem ser usados para inicializar a base comercial. Configure os serviços e os dados do negócio através da aplicação depois de preparar o acesso de administrador.
+
+### Passo 3: Iniciar os serviços
+Abra dois terminais na pasta raiz do projeto:
+
+Terminal 1 — backend:
+```bash
+npm run server
+```
+
+Para desenvolvimento com reinício automático, use `cd server` e `npm run dev`.
+
+Terminal 2 — frontend:
+```bash
+npm run client
+```
+
+O frontend fica disponível em **`http://localhost:3000`** e encaminha pedidos `/api` para o backend em **`http://localhost:5000`**.
 
 ---
 
@@ -80,36 +110,12 @@ Abra o seu navegador em: **`http://localhost:3000`**
 
 O projecto inclui uma suíte completa de testes automatizados (`server/test/runner.js`) que valida as regras críticas de negócio:
 
-Para executar os testes:
+Na pasta raiz, execute a suíte automatizada do backend:
 ```bash
-cd server
 npm test
 ```
 
-### Resultados dos Testes Reais:
-```text
-🧪 ===============================================
-🧪 INICIANDO SUÍTE DE TESTES AUTOMATIZADOS: LAVA JÁ MATOLA
-🧪 ===============================================
-  ✅ PASS: Inicialização e Seeding da Base de Dados
-  ✅ PASS: Novo registo recebe apenas os pontos de boas-vindas definidos
-  ✅ PASS: Bónus de três semanas começa após a primeira lavagem concluída e não duplica
-  ✅ PASS: Movimentos antigos são reduzidos às regras atuais e os saldos ajustados
-  ✅ PASS: Regras de Disponibilidade: Fora de Horário de Funcionamento
-  ✅ PASS: Regras de Disponibilidade: Rejeição de Datas Passadas
-  ✅ PASS: Regras de Capacidade e Conflitos de Reserva
-  ✅ PASS: Fluxo e Alteração de Estados da Lavagem
-  ✅ PASS: Atribuição Única de Pontos de Fidelização (Sem duplicação)
-  ✅ PASS: Resgate de Recompensa: Validação de Saldo e Prevenção de Saldo Negativo
-  ✅ PASS: Validação de Promoções: Códigos Ativos vs Expirados
-  ✅ PASS: Isolamento de Dados: Cliente não acede a dados de outros clientes
-  ✅ PASS: Controlo de Acesso por Perfil (JWT e Roles)
-  ✅ PASS: Fluxo de cobrança pós-lavagem, vouchers, pagamentos e permissões
-
-🧪 ===============================================
-🧪 RESULTADO DOS TESTES: 14 PASSOU | 0 FALHOU
-🧪 ===============================================
-```
+Os testes usam uma base SQLite temporária isolada, criada e reposta pelo runner; não alteram `server/lavaja.db`. Para compilar o frontend, execute `npm run build:client`. Para verificar o lint, execute `npm --prefix client run lint`.
 
 ---
 
@@ -171,10 +177,10 @@ O assistente foi projectado para operar em dois modos:
 
 ### Passo 3: Efetuar uma Marcação
 1. Vá a **«Marcar Lavagem»**.
-2. Escolha **Lavagem Completa (450 MT)** e a data de hoje.
-3. Veja os horários disponíveis a serem calculados pela capacidade simultânea.
-4. Preencha a matrícula (ex: `AEL 123 MP`) e o código promocional `MATOLA15`.
-5. Confirme e veja a emissão imediata da referência (ex: `LJ-XXXX`) e vaga atribuída.
+2. Na etapa 1, escolha **Lavagem Completa (450 MT)**, a data e um horário disponível; a barra de progresso mostra 50%.
+3. Clique em **«Avançar»** para abrir a etapa 2, que mostra 100% de progresso.
+4. Preencha os dados da viatura, aplique o código promocional `MATOLA15` se estiver ativo e confirme.
+5. Veja a referência da reserva e a vaga atribuída.
 
 ### Passo 4: Fila ao Vivo
 1. Aceda a **«Fila ao Vivo»** e mostre as 3 vagas de atendimento com estimativa dinâmica de tempo de espera.

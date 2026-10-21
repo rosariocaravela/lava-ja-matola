@@ -20,7 +20,7 @@ function generateRefCode() {
 // Customers: own reservations only
 // Admin/Employee: all reservations with query filters
 router.get('/', authenticateToken, (req, res) => {
-  const { status, date, search } = req.query;
+  const { status, date, from_date, search } = req.query;
   const user = req.user;
 
   try {
@@ -52,6 +52,10 @@ router.get('/', authenticateToken, (req, res) => {
       if (date) {
         query += ' AND r.scheduled_date = ?';
         params.push(date);
+      }
+      if (from_date) {
+        query += ' AND r.scheduled_date >= ?';
+        params.push(from_date);
       }
       if (search) {
         query += ' AND (r.reference_code LIKE ? OR r.customer_name LIKE ? OR r.vehicle_plate LIKE ?)';
@@ -224,7 +228,7 @@ router.post('/', optionalToken, (req, res) => {
         INSERT INTO notifications (target_role, title, message, type, reservation_id)
         VALUES ('employee', 'Nova Reserva Agendada', ?, 'info', ?)
       `).run(
-        `Novo agendamento de ${customer_name.trim()} (${vehicle_plate.trim().toUpperCase()}) para ${scheduled_date} às ${scheduled_time}.`,
+        `Nova reserva ${refCode}: ${customer_name.trim()} — ${vehicle_plate.trim().toUpperCase()}, ${service.name}, para ${scheduled_date} às ${scheduled_time}.`,
         reservationId
       );
 
@@ -492,6 +496,23 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
           `).run(
             reservation.user_id,
             `A lavagem do seu ${reservation.vehicle_model} (${reservation.vehicle_plate}) foi concluída com sucesso! O veículo está pronto para levantamento.`,
+            id
+          );
+        }
+      } else if (new_status === 'cancelado') {
+        const cancellationMessage = `A reserva ${reservation.reference_code} de ${reservation.customer_name} (${reservation.vehicle_plate}) para ${reservation.scheduled_date} às ${reservation.scheduled_time} foi cancelada.`;
+        db.prepare(`
+          INSERT INTO notifications (target_role, title, message, type, reservation_id)
+          VALUES ('employee', 'Agendamento Cancelado', ?, 'warning', ?)
+        `).run(cancellationMessage, id);
+
+        if (reservation.user_id) {
+          db.prepare(`
+            INSERT INTO notifications (user_id, target_role, title, message, type, reservation_id)
+            VALUES (?, 'customer', 'Agendamento Cancelado', ?, 'warning', ?)
+          `).run(
+            reservation.user_id,
+            `O agendamento ${reservation.reference_code} para ${reservation.scheduled_date} às ${reservation.scheduled_time} foi cancelado.`,
             id
           );
         }

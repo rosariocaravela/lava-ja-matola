@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { 
-  Calendar, Clock, Car, CheckCircle2, AlertCircle, ArrowRight, 
-  Tag, Shield, ArrowLeft, Award, Sparkles, User
+  Calendar, CheckCircle2, AlertCircle, ArrowRight, Tag, ArrowLeft
 } from 'lucide-react';
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -34,6 +33,7 @@ export default function BookingPage() {
   const [promoError, setPromoError] = useState('');
 
   // UI state
+  const [activeStep, setActiveStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -144,6 +144,7 @@ export default function BookingPage() {
   }
 
   const selectedService = services.find(s => s.id.toString() === selectedServiceId.toString());
+  const bookingProgress = activeStep === 1 ? 50 : 100;
   
   // Price calculations
   let finalPrice = selectedService ? selectedService.price_mzn : 0;
@@ -220,17 +221,36 @@ export default function BookingPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       <div className="text-center max-w-xl mx-auto mb-8">
-        <span className="text-xs font-bold text-blue-600 uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
-          Agendamento Digital Inteligente
-        </span>
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight mt-2">
+        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
           Marcar Lavagem
         </h1>
         <p className="text-xs text-slate-600 mt-1">
-          Selecione o serviço e horário desejados. O sistema aloca as vagas disponíveis em tempo real.
+          {activeStep === 1
+            ? 'Escolha o serviço, a data e o horário para continuar.'
+            : 'Preencha os dados da viatura e confirme o agendamento.'}
         </p>
+      </div>
+
+      <div className="mb-6">
+        <div className="mb-2 flex items-center justify-between gap-3 text-xs sm:text-sm font-semibold text-slate-600">
+          <span>Etapa {activeStep} de 2 · {activeStep === 1 ? 'Serviço e horário' : 'Dados e confirmação'}</span>
+          <span className="shrink-0">{bookingProgress}% concluído</span>
+        </div>
+        <div
+          className="h-2 overflow-hidden rounded-full bg-slate-200"
+          role="progressbar"
+          aria-label="Progresso do agendamento"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={bookingProgress}
+        >
+          <div
+            className="h-full rounded-full bg-blue-600 transition-all duration-300"
+            style={{ width: `${bookingProgress}%` }}
+          />
+        </div>
       </div>
 
       {errorMessage && (
@@ -240,9 +260,10 @@ export default function BookingPage() {
         </div>
       )}
 
-      <form onSubmit={handleConfirmBooking} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Service & Slot Selection */}
-        <div className="lg:col-span-7 space-y-6">
+      <form onSubmit={handleConfirmBooking} className="space-y-6">
+        {activeStep === 1 ? (
+          <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           {/* Step 1: Services */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
             <label className="text-xs font-bold text-slate-900 uppercase tracking-wider block">
@@ -330,159 +351,222 @@ export default function BookingPage() {
               </div>
             ) : null}
           </div>
-        </div>
+          </div>
 
-        {/* Right Column: Customer Info & Summary */}
-        <div className="lg:col-span-5 space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-            <label className="text-xs font-bold text-slate-900 uppercase tracking-wider block">
-              3. Dados da Viatura & Contacto
-            </label>
+          <button
+            type="button"
+            disabled={!selectedServiceId || !selectedDate || !selectedTime || slotsLoading}
+            onClick={() => {
+              setErrorMessage('');
+              setActiveStep(2);
+            }}
+            className="ml-auto flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Avançar
+            <ArrowRight className="h-4 w-4" />
+          </button>
+          </>
+        ) : (
+          <>
+          <div className="flex flex-col gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                <Calendar className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Resumo da marcação</p>
+                <p className="mt-1 font-bold text-slate-900">{selectedService?.name}</p>
+                <p className="mt-1 text-sm text-slate-600">{selectedDate} às {selectedTime}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage('');
+                setActiveStep(1);
+              }}
+              className="inline-flex min-h-10 items-center gap-1 self-start rounded-lg px-3 font-semibold text-blue-700 transition-colors hover:bg-blue-100 hover:text-blue-900 sm:self-auto"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Alterar serviço ou horário
+            </button>
+          </div>
 
-            <div className="space-y-3 text-xs">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="mb-5">
+              <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Etapa 2</p>
+              <h2 className="mt-1 text-lg font-bold text-slate-900">Dados da viatura e contacto</h2>
+              <p className="mt-1 text-sm text-slate-500">Preencha os campos obrigatórios para concluir a marcação.</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="text-slate-600 font-semibold mb-1 block">Nome do Condutor *</label>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Nome do condutor *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Carlos Sitoe"
+                  autoComplete="name"
+                  placeholder="Ex.: Carlos Sitoe"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
               <div>
-                <label className="text-slate-600 font-semibold mb-1 block">Contacto Telefónico *</label>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Contacto telefónico *</label>
+                <input
+                  type="tel"
+                  required
+                  autoComplete="tel"
+                  placeholder="Ex.: +258 84 123 4567"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Matrícula *</label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: +258 84 123 4567"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                  autoComplete="off"
+                  placeholder="Ex.: ABC 123 MP"
+                  value={vehiclePlate}
+                  onChange={(e) => setVehiclePlate(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 font-mono text-sm uppercase text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-slate-600 font-semibold mb-1 block">Matrícula *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: ABC 123 MP"
-                    value={vehiclePlate}
-                    onChange={(e) => setVehiclePlate(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 uppercase font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-600 font-semibold mb-1 block">Modelo da Viatura *</label>
-                  <input
-                    type="text"
-                    required
-                    list="vehicle-model-suggestions"
-                    placeholder="Escolha ou escreva o modelo"
-                    value={vehicleModel}
-                    onChange={(e) => setVehicleModel(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-                  />
-                  <datalist id="vehicle-model-suggestions">
-                    <option value="Toyota Hilux" />
-                    <option value="Toyota Corolla" />
-                    <option value="Toyota Fortuner" />
-                    <option value="Nissan Navara" />
-                    <option value="Nissan X-Trail" />
-                    <option value="Mazda Demio" />
-                    <option value="Ford Ranger" />
-                    <option value="Isuzu D-Max" />
-                    <option value="Honda Fit" />
-                    <option value="Suzuki Swift" />
-                  </datalist>
-                </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Modelo da viatura *</label>
+                <input
+                  type="text"
+                  required
+                  list="vehicle-model-suggestions"
+                  autoComplete="off"
+                  placeholder="Escolha ou escreva o modelo"
+                  value={vehicleModel}
+                  onChange={(e) => setVehicleModel(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
+                />
+                <datalist id="vehicle-model-suggestions">
+                  <option value="Toyota Hilux" />
+                  <option value="Toyota Corolla" />
+                  <option value="Toyota Fortuner" />
+                  <option value="Nissan Navara" />
+                  <option value="Nissan X-Trail" />
+                  <option value="Mazda Demio" />
+                  <option value="Ford Ranger" />
+                  <option value="Isuzu D-Max" />
+                  <option value="Honda Fit" />
+                  <option value="Suzuki Swift" />
+                </datalist>
               </div>
 
-              <div>
-                <label className="text-slate-600 font-semibold mb-1 block">Observações (Opcional)</label>
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Observações <span className="font-normal text-slate-500">(opcional)</span></label>
                 <textarea
-                  rows="2"
-                  placeholder="Ex: Atenção especial aos tapetes ou jantes..."
+                  rows="3"
+                  placeholder="Ex.: Atenção especial aos tapetes ou jantes..."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
+                  className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
                 />
               </div>
             </div>
+          </section>
 
-            {/* Promo Code Input */}
-            <div className="pt-2 border-t border-slate-100">
-              <label className="text-[11px] font-bold text-slate-700 uppercase mb-1.5 block">
-                Código Promocional
-              </label>
-              <div className="flex gap-2">
+          <section className="grid grid-cols-1 gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6 md:grid-cols-2 md:items-start">
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <Tag className="h-4 w-4 text-blue-600" />
+                <h3 className="text-sm font-bold text-slate-900">Código promocional</h3>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   type="text"
-                  placeholder="Ex: QUARTA20"
+                  aria-label="Código promocional"
+                  placeholder="Ex.: QUARTA20"
                   value={promoCode}
                   onChange={(e) => setPromoCode(e.target.value)}
-                  className="flex-1 px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl uppercase font-mono focus:outline-none focus:border-blue-500"
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 font-mono text-sm uppercase text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
                 />
                 <button
                   type="button"
                   onClick={handleApplyPromo}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+                  disabled={!promoCode.trim()}
+                  className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Aplicar
                 </button>
               </div>
               {appliedPromo && (
-                <div className="mt-2 text-[11px] text-emerald-600 flex items-center gap-1 font-medium">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Promoção «{appliedPromo.title}» aplicada (-{appliedPromo.discount_percentage}%)</span>
+                <div className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-medium text-emerald-700">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Promoção «{appliedPromo.title}» aplicada: {appliedPromo.discount_percentage}% de desconto.</span>
                 </div>
               )}
               {promoError && (
-                <div className="mt-2 text-[11px] text-red-600 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" />
+                <div className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{promoError}</span>
                 </div>
               )}
             </div>
 
-              {/* Price Summary */}
-            <div className="pt-3 border-t border-slate-200 space-y-2 text-xs">
-              <div className="flex justify-between text-slate-600">
-                <span>Serviço Base:</span>
-                <span>{selectedService ? selectedService.price_mzn : 0} MT</span>
-              </div>
-              {discountAmount > 0 && (
-                <div className="flex justify-between text-emerald-600 font-semibold">
-                  <span>Desconto Promocional:</span>
-                  <span>-{discountAmount} MT</span>
+            <div className="rounded-xl bg-slate-50 p-4 sm:p-5">
+              <h3 className="mb-4 text-sm font-bold text-slate-900">Resumo do preço</h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between gap-3 text-slate-600">
+                  <span className="min-w-0 truncate">{selectedService?.name || 'Serviço selecionado'}</span>
+                  <span className="shrink-0">{selectedService ? selectedService.price_mzn : 0} MT</span>
                 </div>
-              )}
-              <div className="flex justify-between text-slate-900 font-bold text-base pt-2 border-t border-slate-100">
-                <span>Total a Pagar:</span>
-                <span className="text-blue-600">{finalPrice} MT</span>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between gap-3 font-semibold text-emerald-700">
+                    <span>Desconto promocional</span>
+                    <span className="shrink-0">−{discountAmount} MT</span>
+                  </div>
+                )}
+                <div className="flex items-end justify-between gap-3 border-t border-slate-200 pt-3">
+                  <span className="font-bold text-slate-900">Total a pagar</span>
+                  <span className="text-2xl font-black text-blue-700">{finalPrice} MT</span>
+                </div>
               </div>
+              <p className="mt-3 text-xs leading-relaxed text-slate-500">O pagamento é feito depois da lavagem, no estabelecimento.</p>
             </div>
+          </section>
 
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setErrorMessage('');
+                setActiveStep(1);
+              }}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Voltar
+            </button>
             <button
               type="submit"
               disabled={loading || !selectedTime}
-              className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 text-sm font-bold text-white shadow-md transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-64"
             >
               {loading ? (
                 <span>A processar reserva...</span>
               ) : (
                 <>
-                  <span>Confirmar Agendamento</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>Confirmar agendamento</span>
+                  <ArrowRight className="h-4 w-4" />
                 </>
               )}
             </button>
           </div>
-        </div>
+          </>
+        )}
       </form>
     </div>
   );
