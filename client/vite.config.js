@@ -10,6 +10,7 @@ export default defineConfig({
   ],
   server: {
     port: 3000,
+    allowedHosts: ['blaspheme-snowfall-unsecured.ngrok-free.dev'],
     proxy: {
       '/api': {
         target: 'http://localhost:5000',

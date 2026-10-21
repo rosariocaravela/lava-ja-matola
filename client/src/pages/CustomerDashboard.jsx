@@ -7,6 +7,7 @@ import {
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
 import PaymentPanel from '../components/PaymentPanel';
+import ShareBusiness from '../components/ShareBusiness';
 import { downloadVehicleReceipt } from '../utils/vehicleReceipt';
 
 export default function CustomerDashboard() {
@@ -310,13 +311,16 @@ export default function CustomerDashboard() {
                           </button>
                         )}
                         {r.status === 'concluido' && (
-                          <button
-                            onClick={() => setPaymentReservationId(r.id)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-blue-800"
-                          >
-                            <ReceiptText className="h-3.5 w-3.5" />
-                            {r.payment_status === 'pago' ? 'Ver comprovativo' : 'Proceder ao pagamento'}
-                          </button>
+                          <>
+                            <button
+                              onClick={() => setPaymentReservationId(r.id)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-blue-800"
+                            >
+                              <ReceiptText className="h-3.5 w-3.5" />
+                              {r.payment_status === 'pago' ? 'Ver comprovativo' : 'Proceder ao pagamento'}
+                            </button>
+                            <ShareBusiness />
+                          </>
                         )}
                         </div>
                       </td>

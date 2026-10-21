@@ -33,6 +33,10 @@ O agendamento é apresentado em duas etapas. Na primeira, o cliente escolhe o se
 
 O agendamento feito pelo cliente confirma a entrada na fila, mas não comprova que a viatura já foi entregue. Quando o cliente chega ao estabelecimento, um funcionário ou administrador confirma a receção no painel operacional. A confirmação identifica a conta e a hora, coloca a viatura em espera e disponibiliza ao cliente um comprovativo descarregável; o ficheiro também permite imprimir ou guardar como PDF. Este documento comprova apenas a receção, não o pagamento nem a conclusão da lavagem.
 
+### Partilha do Lava Já
+
+O botão **«Partilhar o Lava Já»**, disponível na página inicial e junto às lavagens concluídas no painel do cliente, usa o menu de partilha do dispositivo quando disponível. Caso contrário, oferece atalhos para WhatsApp, Facebook e Telegram, além de copiar o endereço do site. Em desenvolvimento local, o endereço `localhost` só funciona no computador que está a executar a aplicação; para os clientes acederem, partilhe o endereço público do ngrok ou configure um domínio.
+
 ---
 
 ## 2. Acesso e autenticação

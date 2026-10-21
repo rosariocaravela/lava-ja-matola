@@ -6,6 +6,7 @@ import {
   ExternalLink, HelpCircle, ChevronDown, ChevronUp, AlertCircle
 } from 'lucide-react';
 import { apiRequest } from '../api';
+import ShareBusiness from '../components/ShareBusiness';
 
 export default function HomePage({ onOpenAi }) {
   const navigate = useNavigate();
@@ -93,7 +94,7 @@ export default function HomePage({ onOpenAi }) {
                   <span>Marcar Lavagem Agora</span>
                   <ArrowRight className="w-4 h-4" />
                 </Link>
-
+                <ShareBusiness />
               </div>
 
               {/* Stats badges */}
