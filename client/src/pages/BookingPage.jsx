@@ -12,6 +12,8 @@ export default function BookingPage() {
   const { user } = useAuth();
 
   const [services, setServices] = useState([]);
+  const [promotions, setPromotions] = useState([]);
+  const [promotionLoadError, setPromotionLoadError] = useState('');
   const [selectedServiceId, setSelectedServiceId] = useState(searchParams.get('serviceId') || '');
   
   // Date handling: defaults to today
@@ -19,6 +21,7 @@ export default function BookingPage() {
   const [selectedDate, setSelectedDate] = useState(searchParams.get('date') || todayStr);
   const [availableSlotsData, setAvailableSlotsData] = useState(null);
   const [selectedTime, setSelectedTime] = useState('');
+  const [availabilityError, setAvailabilityError] = useState('');
   
   // Form fields
   const [customerName, setCustomerName] = useState(user ? user.name : '');
@@ -41,6 +44,15 @@ export default function BookingPage() {
 
   useEffect(() => {
     loadServices();
+    apiRequest('/promotions')
+      .then(data => {
+        setPromotions(data);
+        setPromotionLoadError('');
+      })
+      .catch(err => {
+        console.error('Erro ao carregar campanhas promocionais:', err);
+        setPromotionLoadError('Não foi possível carregar as campanhas. Pode inserir o código que recebeu.');
+      });
   }, []);
 
   useEffect(() => {
@@ -56,6 +68,32 @@ export default function BookingPage() {
     if (selectedDate && selectedServiceId) {
       loadSlots(selectedDate, selectedServiceId);
     }
+  }, [selectedDate, selectedServiceId]);
+
+  useEffect(() => {
+    if (!selectedDate || !selectedServiceId) return undefined;
+
+    async function refreshAvailability() {
+      try {
+        const data = await apiRequest(`/availability?date=${selectedDate}&serviceId=${selectedServiceId}`);
+        setAvailableSlotsData(data);
+        setAvailabilityError('');
+        setSelectedTime(current =>
+          current && !data.slots.some(slot => slot.time === current && slot.available) ? '' : current
+        );
+      } catch (err) {
+        console.error('Erro ao atualizar os horários disponíveis:', err);
+        setAvailableSlotsData(null);
+        setAvailabilityError('Não foi possível atualizar os horários. Tente novamente.');
+      }
+    }
+
+    const interval = window.setInterval(refreshAvailability, 15000);
+    window.addEventListener('focus', refreshAvailability);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshAvailability);
+    };
   }, [selectedDate, selectedServiceId]);
 
   async function loadServices() {
@@ -74,23 +112,26 @@ export default function BookingPage() {
     try {
       setSlotsLoading(true);
       setSelectedTime('');
+      setAvailabilityError('');
+      setAvailableSlotsData(null);
       const data = await apiRequest(`/availability?date=${date}&serviceId=${serviceId}`);
       setAvailableSlotsData(data);
     } catch (err) {
       console.error('Erro ao carregar horários:', err);
+      setAvailabilityError('Não foi possível carregar os horários. Tente novamente.');
     } finally {
       setSlotsLoading(false);
     }
   }
 
-  async function handleApplyPromo() {
-    if (!promoCode.trim()) return;
+  async function handleApplyPromo(code = promoCode) {
+    if (!code.trim()) return;
     setPromoError('');
     try {
       const res = await apiRequest('/promotions/validate', {
         method: 'POST',
         body: JSON.stringify({
-          code: promoCode.trim().toUpperCase(),
+          code: code.trim().toUpperCase(),
           service_id: selectedServiceId,
           scheduled_date: selectedDate
         })
@@ -144,6 +185,9 @@ export default function BookingPage() {
   }
 
   const selectedService = services.find(s => s.id.toString() === selectedServiceId.toString());
+  const eligiblePromotions = promotions.filter(
+    promotion => !promotion.service_id || promotion.service_id.toString() === selectedServiceId.toString()
+  );
   const bookingProgress = activeStep === 1 ? 50 : 100;
   
   // Price calculations
@@ -275,7 +319,11 @@ export default function BookingPage() {
                 return (
                   <div
                     key={s.id}
-                    onClick={() => setSelectedServiceId(s.id.toString())}
+                    onClick={() => {
+                      setSelectedServiceId(s.id.toString());
+                      setAppliedPromo(null);
+                      setPromoError('');
+                    }}
                     className={`p-3.5 rounded-xl border text-xs cursor-pointer transition-all flex items-center justify-between ${
                       isSelected
                         ? 'bg-blue-50/80 border-blue-600 text-blue-950 ring-1 ring-blue-600'
@@ -305,7 +353,11 @@ export default function BookingPage() {
                 type="date"
                 min={todayStr}
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setAppliedPromo(null);
+                  setPromoError('');
+                }}
                 className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg font-medium text-slate-800"
               />
             </div>
@@ -313,6 +365,10 @@ export default function BookingPage() {
             {slotsLoading ? (
               <div className="text-center py-8 text-xs text-slate-400">
                 A calcular capacidade das vagas para {selectedDate}...
+              </div>
+            ) : availabilityError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                {availabilityError}
               </div>
             ) : availableSlotsData ? (
               <div>
@@ -482,15 +538,22 @@ export default function BookingPage() {
             <div>
               <div className="mb-3 flex items-center gap-2">
                 <Tag className="h-4 w-4 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">Código promocional</h3>
+                <h3 className="text-sm font-bold text-slate-900">Código de desconto da campanha</h3>
               </div>
+              <p className="mb-3 text-xs leading-relaxed text-slate-600">
+                Insira o código de uma campanha para descontar uma percentagem do preço deste serviço. Não é o código de voucher do Passaporte VIP.
+              </p>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   type="text"
                   aria-label="Código promocional"
-                  placeholder="Ex.: QUARTA20"
+                  placeholder={eligiblePromotions[0]?.code ? `Ex.: ${eligiblePromotions[0].code}` : 'Escreva o código da campanha'}
                   value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
+                  onChange={(e) => {
+                    setPromoCode(e.target.value.toUpperCase());
+                    setAppliedPromo(null);
+                    setPromoError('');
+                  }}
                   className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 font-mono text-sm uppercase text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-100"
                 />
                 <button
@@ -502,6 +565,30 @@ export default function BookingPage() {
                   Aplicar
                 </button>
               </div>
+              {eligiblePromotions.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-[11px] font-semibold text-slate-500">Campanhas disponíveis para este serviço:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {eligiblePromotions.map(promotion => (
+                      <button
+                        key={promotion.id}
+                        type="button"
+                        onClick={() => {
+                          setPromoCode(promotion.code);
+                          handleApplyPromo(promotion.code);
+                        }}
+                        className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-left text-[11px] text-blue-900 transition hover:border-blue-400 hover:bg-blue-100"
+                      >
+                        <span className="font-bold">{promotion.code}</span>
+                        <span className="ml-1.5">{promotion.discount_percentage}% · {promotion.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {promotionLoadError && (
+                <p className="mt-2 text-[11px] text-amber-700">{promotionLoadError}</p>
+              )}
               {appliedPromo && (
                 <div className="mt-3 flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-medium text-emerald-700">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />

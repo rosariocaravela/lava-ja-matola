@@ -56,7 +56,6 @@ export default function HomePage({ onOpenAi }) {
       a: 'Sim! O Assistente Lava Já Matola consulta os serviços, preços e horários livres. Pode conversar com ele em português simples para tirar dúvidas e iniciar o seu agendamento.'
     }
   ];
-
   return (
     <div className="space-y-16 pb-16">
       {/* Hero Section */}
@@ -98,14 +97,12 @@ export default function HomePage({ onOpenAi }) {
               </div>
 
               {/* Stats badges */}
-              <div className="pt-6 grid grid-cols-3 gap-4 border-t border-slate-800 max-w-lg mx-auto lg:mx-0 text-left">
+              <div className="pt-6 grid grid-cols-2 gap-4 border-t border-slate-800 max-w-lg mx-auto lg:mx-0 text-left">
                 <div>
-                  <div className="text-2xl font-black text-white">3 Vagas</div>
+                  <div className="text-2xl font-black text-white">
+                    {settings ? `${settings.simultaneous_capacity} Vagas` : '— Vagas'}
+                  </div>
                   <div className="text-xs text-slate-400">Atendimento Simultâneo</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-black text-blue-400">0 min</div>
-                  <div className="text-xs text-slate-400">Espera com Agendamento</div>
                 </div>
                 <div>
                   <div className="text-2xl font-black text-emerald-400">10–40 Pts</div>

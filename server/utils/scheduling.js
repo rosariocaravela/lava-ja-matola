@@ -68,6 +68,13 @@ function checkAvailability(date, startTime, durationMinutes, excludeReservationI
 
   const existingReservations = db.prepare(query).all(...params);
 
+  if (existingReservations.some(reservation => reservation.scheduled_time === startTime)) {
+    return {
+      available: false,
+      reason: 'Este horário já foi reservado. Escolha outro horário.'
+    };
+  }
+
   // Check each 5-minute slice within [startMinutes, endMinutes - 1] to ensure concurrency <= capacity
   for (let t = startMinutes; t < endMinutes; t += 5) {
     let concurrentCount = 0;

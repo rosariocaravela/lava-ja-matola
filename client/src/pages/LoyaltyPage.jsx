@@ -205,29 +205,6 @@ export default function LoyaltyPage() {
                     {reward.description || 'Benefício exclusivo para clientes do Passaporte Lava Já.'}
                   </p>
 
-                  <div className={`mt-4 rounded-xl border p-3 ${
-                    isServiceBenefit ? 'border-amber-200 bg-amber-50/70' : 'border-emerald-200 bg-emerald-50/70'
-                  }`}>
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                      {isServiceBenefit ? 'O que recebe' : 'Desconto aplicado'}
-                    </div>
-                    <div className={`mt-1 text-sm font-black ${
-                      isServiceBenefit ? 'text-amber-950' : 'text-emerald-900'
-                    }`}>
-                      {isServiceBenefit
-                        ? reward.service_name || reward.title
-                        : `Até ${Number(reward.discount_mzn).toLocaleString('pt-MZ')} MT`}
-                    </div>
-                    {isServiceBenefit && reward.service_name && (
-                      <div className="mt-1 text-[11px] text-slate-600">Válido para: {reward.service_name}</div>
-                    )}
-                    {isServiceBenefit && reward.discount_mzn > 0 && (
-                      <div className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                        Valor de referência: {Number(reward.discount_mzn).toLocaleString('pt-MZ')} MT — não é dinheiro nem desconto.
-                      </div>
-                    )}
-                  </div>
-
                   <div className="mt-auto pt-5">
                   <button
                     onClick={() => handleRedeem(reward)}

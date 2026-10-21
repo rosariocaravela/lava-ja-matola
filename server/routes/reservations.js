@@ -30,11 +30,13 @@ router.get('/', authenticateToken, (req, res) => {
              p.reward_discount_mzn, p.total_discount_mzn, p.amount_paid_mzn,
              p.method as payment_method, p.status as payment_status, p.simulated as payment_simulated,
              p.transaction_reference as payment_reference, p.paid_at as payment_paid_at,
-             u.name as registered_user_name, u.email as registered_user_email
+             u.name as registered_user_name, u.email as registered_user_email,
+             receiver.name as vehicle_received_by_name
       FROM reservations r
       JOIN services s ON r.service_id = s.id
       LEFT JOIN reservation_payments p ON p.reservation_id = r.id
       LEFT JOIN users u ON r.user_id = u.id
+      LEFT JOIN users receiver ON receiver.id = r.vehicle_received_by_user_id
       WHERE 1=1
     `;
     const params = [];
@@ -85,17 +87,18 @@ router.get('/:id', authenticateToken, (req, res) => {
              s.points_reward, p.promotion_code, p.promotion_discount_mzn,
              p.reward_discount_mzn, p.total_discount_mzn, p.amount_paid_mzn,
              p.method as payment_method, p.status as payment_status, p.simulated as payment_simulated,
-             p.transaction_reference as payment_reference, p.paid_at as payment_paid_at
+             p.transaction_reference as payment_reference, p.paid_at as payment_paid_at,
+             receiver.name as vehicle_received_by_name
       FROM reservations r
       JOIN services s ON r.service_id = s.id
       LEFT JOIN reservation_payments p ON p.reservation_id = r.id
+      LEFT JOIN users receiver ON receiver.id = r.vehicle_received_by_user_id
       WHERE r.id = ?
     `).get(id);
 
     if (!reservation) {
       return res.status(404).json({ error: 'Reserva não encontrada.' });
     }
-
     // Data isolation check: Customers can only see their own
     if (user.role === 'customer' && reservation.user_id !== user.id) {
       return res.status(403).json({ error: 'Acesso negado aos dados desta reserva.' });
@@ -166,6 +169,13 @@ router.post('/', optionalToken, (req, res) => {
 
     // Use transaction for reservation creation and audit log
     const createTx = db.transaction(() => {
+      const finalAvailability = checkAvailability(scheduled_date, scheduled_time, service.duration_minutes);
+      if (!finalAvailability.available) {
+        const availabilityError = new Error(finalAvailability.reason || 'O horário selecionado já não está disponível.');
+        availabilityError.code = 'SLOT_UNAVAILABLE';
+        throw availabilityError;
+      }
+
       const stmt = db.prepare(`
         INSERT INTO reservations (
           reference_code, user_id, customer_name, customer_phone, vehicle_plate, 
@@ -185,8 +195,8 @@ router.post('/', optionalToken, (req, res) => {
         scheduled_date,
         scheduled_time,
         service.duration_minutes,
-        availability.endTime,
-        availability.assignedBay,
+        finalAvailability.endTime,
+        finalAvailability.assignedBay,
         notes ? notes.trim() : null
       );
 
@@ -252,6 +262,9 @@ router.post('/', optionalToken, (req, res) => {
       reservation: createdReservation
     });
   } catch (error) {
+    if (error.code === 'SLOT_UNAVAILABLE') {
+      return res.status(409).json({ error: error.message });
+    }
     console.error('Erro ao criar reserva:', error);
     res.status(500).json({ error: 'Erro ao criar reserva.' });
   }
@@ -298,8 +311,9 @@ router.post('/register-completed', authenticateToken, requireRole(['employee', '
         INSERT INTO reservations (
           reference_code, user_id, customer_name, customer_phone, vehicle_plate,
           vehicle_model, service_id, scheduled_date, scheduled_time, duration_minutes,
-          end_time, bay_number, status, notes, points_awarded
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'concluido', ?, 1)
+          end_time, bay_number, status, notes, points_awarded, vehicle_received_at,
+          vehicle_received_by_user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'concluido', ?, 1, CURRENT_TIMESTAMP, ?)
       `);
 
       const result = stmt.run(
@@ -314,7 +328,8 @@ router.post('/register-completed', authenticateToken, requireRole(['employee', '
         timeStr,
         service.duration_minutes,
         timeStr,
-        notes ? notes.trim() : 'Lavagem concluída registada no balcão'
+        notes ? notes.trim() : 'Lavagem concluída registada no balcão',
+        req.user.id
       );
 
       const reservationId = result.lastInsertRowid;
@@ -357,11 +372,13 @@ router.post('/register-completed', authenticateToken, requireRole(['employee', '
     const newId = tx();
 
     const created = db.prepare(`
-      SELECT r.*, s.name as service_name, p.original_amount_mzn as price_mzn,
+      SELECT r.*, s.name as service_name, receiver.name as vehicle_received_by_name,
+             p.original_amount_mzn as price_mzn,
              s.points_reward, p.total_discount_mzn, p.amount_paid_mzn, p.status as payment_status
       FROM reservations r
       JOIN services s ON r.service_id = s.id
       JOIN reservation_payments p ON p.reservation_id = r.id
+      LEFT JOIN users receiver ON receiver.id = r.vehicle_received_by_user_id
       WHERE r.id = ?
     `).get(newId);
 
@@ -372,6 +389,88 @@ router.post('/register-completed', authenticateToken, requireRole(['employee', '
   } catch (error) {
     console.error('Erro ao registar lavagem concluída:', error);
     res.status(500).json({ error: 'Erro ao registar lavagem.' });
+  }
+});
+
+// POST /api/reservations/:id/receive - Staff confirms the vehicle was handed over
+router.post('/:id/receive', authenticateToken, requireRole(['employee', 'admin']), (req, res) => {
+  const reservationId = Number(req.params.id);
+  if (!Number.isInteger(reservationId) || reservationId <= 0) {
+    return res.status(400).json({ error: 'Identificador de reserva inválido.' });
+  }
+
+  try {
+    const reservation = db.prepare(`
+      SELECT r.*, s.name as service_name, receiver.name as vehicle_received_by_name
+      FROM reservations r
+      JOIN services s ON s.id = r.service_id
+      LEFT JOIN users receiver ON receiver.id = r.vehicle_received_by_user_id
+      WHERE r.id = ?
+    `).get(reservationId);
+
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reserva não encontrada.' });
+    }
+    const receivingUser = db.prepare('SELECT name FROM users WHERE id = ?').get(req.user.id);
+    if (!receivingUser) {
+      return res.status(401).json({ error: 'Conta do funcionário não encontrada.' });
+    }
+    if (reservation.vehicle_received_at) {
+      return res.json({
+        message: 'A receção desta viatura já foi confirmada.',
+        reservation
+      });
+    }
+    if (!['reservado', 'aguardando', 'em_atendimento'].includes(reservation.status)) {
+      return res.status(400).json({
+        error: 'Só é possível confirmar a receção antes de a lavagem ser concluída.'
+      });
+    }
+    const receivedStatus = reservation.status === 'reservado' ? 'aguardando' : reservation.status;
+
+    const receiveTx = db.transaction(() => {
+      db.prepare(`
+        UPDATE reservations
+        SET status = ?,
+            vehicle_received_at = CURRENT_TIMESTAMP,
+            vehicle_received_by_user_id = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND vehicle_received_at IS NULL
+      `).run(receivedStatus, req.user.id, reservationId);
+
+      db.prepare(`
+        INSERT INTO reservation_status_history (reservation_id, old_status, new_status, changed_by_user_id, notes)
+        VALUES (?, ?, ?, ?, 'Receção da viatura confirmada no balcão')
+      `).run(reservationId, reservation.status, receivedStatus, req.user.id);
+
+      if (reservation.user_id) {
+        db.prepare(`
+          INSERT INTO notifications (user_id, target_role, title, message, type, reservation_id)
+          VALUES (?, 'customer', 'Viatura recebida', ?, 'success', ?)
+        `).run(
+          reservation.user_id,
+          `A viatura ${reservation.vehicle_plate} foi recebida por ${receivingUser.name}. O comprovativo já está disponível no seu painel.`,
+          reservationId
+        );
+      }
+    });
+    receiveTx();
+
+    const updated = db.prepare(`
+      SELECT r.*, s.name as service_name, receiver.name as vehicle_received_by_name
+      FROM reservations r
+      JOIN services s ON s.id = r.service_id
+      LEFT JOIN users receiver ON receiver.id = r.vehicle_received_by_user_id
+      WHERE r.id = ?
+    `).get(reservationId);
+
+    res.json({
+      message: 'Receção da viatura confirmada. O comprovativo está disponível.',
+      reservation: updated
+    });
+  } catch (error) {
+    console.error('Erro ao confirmar receção da viatura:', error);
+    res.status(500).json({ error: 'Erro ao confirmar a receção da viatura.' });
   }
 });
 
@@ -411,6 +510,9 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
       }
       if (['em_atendimento', 'concluido'].includes(reservation.status)) {
         return res.status(400).json({ error: 'Não é possível cancelar uma lavagem em atendimento ou já concluída.' });
+      }
+      if (reservation.vehicle_received_at) {
+        return res.status(400).json({ error: 'Não é possível cancelar uma reserva depois de a viatura ser recebida.' });
       }
     } else if (!['employee', 'admin'].includes(user.role)) {
       return res.status(403).json({ error: 'Não tem permissão para alterar esta reserva.' });
@@ -477,9 +579,18 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
       // Update reservation status
       db.prepare(`
         UPDATE reservations 
-        SET status = ?, points_awarded = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = ?, points_awarded = ?,
+            vehicle_received_at = CASE
+              WHEN ? = 'em_atendimento' AND vehicle_received_at IS NULL THEN CURRENT_TIMESTAMP
+              ELSE vehicle_received_at
+            END,
+            vehicle_received_by_user_id = CASE
+              WHEN ? = 'em_atendimento' AND vehicle_received_at IS NULL THEN ?
+              ELSE vehicle_received_by_user_id
+            END,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(new_status, pointsAwarded, id);
+      `).run(new_status, pointsAwarded, new_status, new_status, user.id, id);
 
       // Add to status history
       db.prepare(`
@@ -537,10 +648,12 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
              s.points_reward, p.promotion_code, p.promotion_discount_mzn,
              p.total_discount_mzn, p.amount_paid_mzn, p.method as payment_method,
              p.status as payment_status, p.simulated as payment_simulated,
-             p.transaction_reference as payment_reference, p.paid_at as payment_paid_at
+             p.transaction_reference as payment_reference, p.paid_at as payment_paid_at,
+             receiver.name as vehicle_received_by_name
       FROM reservations r
       JOIN services s ON r.service_id = s.id
       LEFT JOIN reservation_payments p ON p.reservation_id = r.id
+      LEFT JOIN users receiver ON receiver.id = r.vehicle_received_by_user_id
       WHERE r.id = ?
     `).get(id);
 

@@ -13,7 +13,7 @@ O **Lava Já Matola** é uma plataforma digital completa criada para modernizar 
 2. **Fidelização Contínua:** O programa **«Passaporte Lava Já»** credita 10 pontos de boas-vindas, 10 pontos por lavagem básica, 20 por completa, 25 por lavagem de motor, 30 por lavagem premium e 40 por higienização especializada. Após a primeira lavagem concluída, credita mais 10 pontos a cada três semanas. As recompensas custam 50, 100, 150 ou 200 pontos.
 3. **Cobrança após o serviço:** A marcação não exige pagamento antecipado. Após a conclusão, o cliente ou funcionário autorizado consulta a cobrança, acumula promoções e descontos elegíveis, aplica um voucher uma única vez e regista a simulação eletrónica ou o valor recebido no balcão.
 
-A solução dispõe de um **Assistente de Inteligência Artificial conversacional**, gestão de 3 vagas simultâneas de lavagem, notificações de conclusão, fila ao vivo com estimativa dinâmica de tempo de espera, comprovativos de pagamento e painéis dedicados para **Cliente**, **Funcionário** e **Administrador / Gestor**.
+A solução dispõe de um **Assistente de Inteligência Artificial conversacional**, gestão de vagas simultâneas de lavagem, notificações de conclusão, consulta da fila e do estado das viaturas, comprovativos de receção e de pagamento, e painéis dedicados para **Cliente**, **Funcionário** e **Administrador / Gestor**.
 
 ### Serviços disponíveis
 
@@ -29,7 +29,9 @@ O catálogo inicial apresenta serviços com nomes simples e descrições diretas
 
 ### Fluxo de agendamento
 
-O agendamento é apresentado em duas etapas. Na primeira, o cliente escolhe o serviço, a data e um horário disponível; o botão **«Avançar»** só fica ativo depois de selecionar serviço e horário. A barra de progresso indica 50% nesta etapa e 100% na etapa seguinte. Na segunda, o cliente preenche os dados da viatura e contacto, pode aplicar um código promocional e confirma a reserva. É possível voltar para alterar o serviço ou horário.
+O agendamento é apresentado em duas etapas. Na primeira, o cliente escolhe o serviço, a data e um horário disponível; o botão **«Avançar»** só fica ativo depois de selecionar serviço e horário. Cada horário de início aceita uma única reserva: depois de reservado, deixa de estar disponível para os outros clientes. Outros horários próximos continuam sujeitos à capacidade das vagas, que o servidor volta a validar no momento da confirmação. A página atualiza a disponibilidade a cada 15 segundos e quando volta a ficar ativa. A barra de progresso indica 50% nesta etapa e 100% na etapa seguinte. Na segunda, o cliente preenche os dados da viatura e contacto, pode aplicar um código promocional e confirma a reserva. É possível voltar para alterar o serviço ou horário.
+
+O agendamento feito pelo cliente confirma a entrada na fila, mas não comprova que a viatura já foi entregue. Quando o cliente chega ao estabelecimento, um funcionário ou administrador confirma a receção no painel operacional. A confirmação identifica a conta e a hora, coloca a viatura em espera e disponibiliza ao cliente um comprovativo descarregável; o ficheiro também permite imprimir ou guardar como PDF. Este documento comprova apenas a receção, não o pagamento nem a conclusão da lavagem.
 
 ---
 
@@ -121,6 +123,16 @@ Os testes usam uma base SQLite temporária isolada, criada e reposta pelo runner
 
 ## 6. Cobranças e comprovativos
 
+### Comprovativo de receção da viatura
+
+1. O cliente pode reservar de casa e acompanhar a marcação na fila; a reserva, por si só, não emite um comprovativo de entrega.
+2. No estabelecimento, funcionário ou administrador inicia sessão e confirma **«Confirmar receção»**. A API valida o perfil, regista a conta e a hora e coloca a viatura em espera.
+3. Para reservas associadas a uma conta, o comprovativo fica disponível no painel desse cliente e no painel operacional para descarregar. Reservas sem sessão não ficam associadas a um painel de cliente; o funcionário pode consultar e descarregar o comprovativo no painel operacional.
+4. O documento identifica a referência da reserva, o cliente, a viatura, o serviço, quem recebeu e a hora; pode ser impresso ou guardado como PDF.
+5. O registo de uma lavagem presencial já concluída também guarda o funcionário responsável e disponibiliza o comprovativo no registo operacional.
+
+### Comprovativo de pagamento
+
 1. O cliente cria a marcação sem pagar antecipadamente.
 2. O funcionário inicia e conclui a lavagem. A conclusão atribui os pontos uma única vez, mas mantém a cobrança pendente.
 3. Depois da conclusão, o cliente ou funcionário abre **«Proceder ao Pagamento»**. O preço cobrado é o preço guardado quando a marcação foi criada, mesmo que o catálogo seja alterado depois.
@@ -167,7 +179,7 @@ O assistente foi projectado para operar em dois modos:
 
 ### Passo 1: Captação de Clientes (Página Inicial Pública)
 1. Mostre a **Página Inicial**: design moderno, cores do sector automóvel, tabela de serviços e preços em Meticais (MT).
-2. Mostre o banner de campanhas ativas com o código `QUARTA20` (20% OFF) e a ocupação em direto das 3 vagas da Matola.
+2. Mostre o banner de campanhas ativas e a capacidade de atendimento simultâneo configurada para o estabelecimento.
 3. Clique em **«Como Chegar»** para abrir a rota no Google Maps.
 
 ### Passo 2: O Assistente Lava Já Matola
@@ -183,14 +195,20 @@ O assistente foi projectado para operar em dois modos:
 5. Veja a referência da reserva e a vaga atribuída.
 
 ### Passo 4: Fila ao Vivo
-1. Aceda a **«Fila ao Vivo»** e mostre as 3 vagas de atendimento com estimativa dinâmica de tempo de espera.
+1. Aceda a **«Fila ao Vivo»** para consultar os registos do dia e distinguir viaturas prontas para levantamento das reservas e atendimentos.
 
 ### Passo 5: Painel Operacional (Funcionário)
 1. Inicie sessão em `/login` com as credenciais da conta individual de funcionário.
-2. Veja o serviço na lista. Clique em **«Iniciar Lavagem»** e depois em **«Concluir Lavagem»**.
-3. O veículo é marcado como pronto, os pontos são atribuídos uma única vez e o pagamento fica pendente.
-4. Abra **«Proceder ao Pagamento»**, aplique um voucher elegível e selecione uma carteira simulada ou confirme um valor recebido no balcão.
-5. Consulte o comprovativo, que mostra o método, o desconto, o total e se o pagamento foi simulado.
+2. Use os atalhos **«Reservas»** e **«Registar lavagem»** para ir diretamente às respetivas áreas.
+3. Na lista de reservas, pesquise por matrícula ou referência e use os filtros de estado.
+4. Abra **«Ver detalhes»** para consultar contacto, viatura, serviço, preço, horário, estado do pagamento, funcionário que recebeu a viatura e observações.
+5. Quando o cliente entregar a viatura, clique em **«Confirmar receção»**. O sistema regista quem a recebeu e a hora; depois, pode descarregar o **recibo de receção**, que não é comprovativo de pagamento.
+6. Se a reserva ainda não foi recebida e não começou o atendimento, **«Cancelar reserva»** permite ao funcionário cancelar após confirmação. Reservas recebidas, em atendimento ou concluídas não podem ser canceladas pelo cliente; o servidor valida as permissões e o estado.
+7. Clique em **«Iniciar lavagem»** e depois em **«Concluir lavagem»**. A conclusão atribui os pontos uma única vez e deixa a cobrança pendente.
+8. Na reserva concluída, clique em **«Registar pagamento»**; aplique um voucher elegível e selecione uma carteira simulada ou confirme o valor recebido no balcão. Se já estiver pago, o botão permite consultar o pagamento.
+9. O **comprovativo de pagamento** mostra o método, o desconto, o total e se o pagamento foi simulado. É um documento separado do recibo de receção.
+
+Se o cliente chegar sem uma reserva, use **«Registar lavagem»** para registar a lavagem presencial já concluída, procurar a conta de fidelização pelo telefone e emitir o recibo de receção para o registo.
 
 ### Passo 6: Passaporte VIP (Cliente)
 1. Termine a sessão atual e inicie sessão com as credenciais da conta individual do cliente.

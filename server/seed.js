@@ -108,7 +108,7 @@ function seedDatabase(testPasswords = {}) {
     INSERT INTO rewards (title, description, points_cost, discount_mzn, benefit_type, service_id, is_active)
     VALUES (?, ?, ?, ?, ?, ?, 1)
   `);
-  insertReward.run('Perfumador de Painel & Ambientador VIP', 'Aplicação de fragrância premium e higienização do tablier.', REWARD_POINT_COSTS.AIR_FRESHENER, 80, 'service', null);
+  insertReward.run('Limpeza do Painel & Ambientador', 'Limpeza do painel e aplicação de ambientador no interior da viatura.', REWARD_POINT_COSTS.AIR_FRESHENER, 80, 'service', null);
   insertReward.run('Aplicação Gratuita de Cera Protetora', 'Cera de carnaúba de alto brilho sem custo adicional.', REWARD_POINT_COSTS.WAX_APPLICATION, 150, 'service', null);
   insertReward.run('Desconto de 100 MT na Lavagem Completa', 'Abate 100 MZN no valor final da lavagem completa.', REWARD_POINT_COSTS.WASH_DISCOUNT, 100, 'discount', s2);
   insertReward.run('Lavagem Exterior Grátis', 'Uma lavagem exterior 100% gratuita por fidelidade.', REWARD_POINT_COSTS.FREE_EXTERIOR_WASH, 250, 'service', s1);
@@ -118,7 +118,7 @@ function seedDatabase(testPasswords = {}) {
     INSERT INTO promotions (title, description, code, discount_percentage, service_id, start_date, end_date, is_active)
     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
   `);
-  insertPromo.run('Super Quarta-Feira', '20% de desconto em qualquer serviço todas as quartas-feiras', 'QUARTA20', 20, null, '2026-01-01', '2026-12-31');
+  insertPromo.run('Super Quarta-Feira', '10% de desconto em qualquer serviço todas as quartas-feiras', 'QUARTA20', 10, null, '2026-01-01', '2026-12-31');
   insertPromo.run('Desconto Residentes da Matola', '15% de desconto especial para residentes e empresas da Matola', 'MATOLA15', 15, null, '2026-01-01', '2026-12-31');
   insertPromo.run('Boas-Vindas Lava Já Matola', '10% de desconto na primeira reserva feita pela plataforma', 'LAVAJA10', 10, null, '2026-01-01', '2026-12-31');
 

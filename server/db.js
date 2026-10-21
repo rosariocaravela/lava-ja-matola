@@ -206,11 +206,14 @@ function initSchema() {
   ensureColumn('users', 'auth_version', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn('rewards', 'benefit_type', "TEXT NOT NULL DEFAULT 'discount' CHECK(benefit_type IN ('discount', 'service'))");
   ensureColumn('reward_redemptions', 'expires_at', 'DATETIME');
+  ensureColumn('reservations', 'vehicle_received_at', 'DATETIME');
+  ensureColumn('reservations', 'vehicle_received_by_user_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL');
 
   db.prepare(`
     UPDATE rewards
     SET benefit_type = 'service'
     WHERE title LIKE 'Perfumador de Painel%'
+       OR title = 'Limpeza do Painel + Ambientador'
        OR title LIKE 'Aplicação Gratuita de Cera%'
        OR title LIKE 'Lavagem Exterior Grátis%'
   `).run();
@@ -262,6 +265,18 @@ function initSchema() {
 
   db.prepare("UPDATE rewards SET points_cost = ? WHERE title LIKE 'Perfumador de Painel%'")
     .run(REWARD_POINT_COSTS.AIR_FRESHENER);
+  db.prepare(`
+    UPDATE rewards
+    SET title = 'Limpeza do Painel & Ambientador',
+        description = 'Limpeza do painel e aplicação de ambientador no interior da viatura.'
+    WHERE title LIKE 'Perfumador de Painel%'
+  `).run();
+  db.prepare(`
+    UPDATE promotions
+    SET discount_percentage = 10,
+        description = '10% de desconto em qualquer serviço todas as quartas-feiras'
+    WHERE code = 'QUARTA20'
+  `).run();
   db.prepare("UPDATE rewards SET points_cost = ? WHERE title LIKE 'Aplicação Gratuita de Cera%'")
     .run(REWARD_POINT_COSTS.WAX_APPLICATION);
   db.prepare("UPDATE rewards SET points_cost = ? WHERE title LIKE 'Desconto de 100 MT%'")

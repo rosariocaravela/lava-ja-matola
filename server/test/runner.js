@@ -110,7 +110,7 @@ async function runTests() {
 
     const rewards = db.prepare('SELECT title, points_cost FROM rewards').all();
     const rewardCosts = new Map(rewards.map(reward => [reward.title, reward.points_cost]));
-    assert.strictEqual(rewardCosts.get('Perfumador de Painel & Ambientador VIP'), REWARD_POINT_COSTS.AIR_FRESHENER);
+    assert.strictEqual(rewardCosts.get('Limpeza do Painel & Ambientador'), REWARD_POINT_COSTS.AIR_FRESHENER);
     assert.strictEqual(rewardCosts.get('Aplicação Gratuita de Cera Protetora'), REWARD_POINT_COSTS.WAX_APPLICATION);
     assert.strictEqual(rewardCosts.get('Desconto de 100 MT na Lavagem Completa'), REWARD_POINT_COSTS.WASH_DISCOUNT);
     assert.strictEqual(rewardCosts.get('Lavagem Exterior Grátis'), REWARD_POINT_COSTS.FREE_EXTERIOR_WASH);
@@ -780,25 +780,37 @@ async function runTests() {
     const testDate = '2026-11-25';
     const testTime = '11:00';
 
-    // Business settings has simultaneous_capacity = 3
-    // Book 3 slots for the same date and time
-    for (let i = 1; i <= 3; i++) {
-      const avail = checkAvailability(testDate, testTime, 40);
-      assert.strictEqual(avail.available, true, `Reserva ${i} deve caber na capacidade`);
+    const firstSlot = checkAvailability(testDate, testTime, 40);
+    assert.strictEqual(firstSlot.available, true, 'O primeiro cliente deve poder reservar o horário');
+    db.prepare(`
+      INSERT INTO reservations (
+        reference_code, user_id, customer_name, customer_phone, vehicle_plate,
+        vehicle_model, service_id, scheduled_date, scheduled_time, duration_minutes,
+        end_time, bay_number, status
+      ) VALUES ('REF-TEST-1', 1, 'Cliente Teste', '840000000', 'MC-99-99', 'VW Golf', 1, ?, ?, 40, '11:40', ?, 'reservado')
+    `).run(testDate, testTime, firstSlot.assignedBay);
 
+    const duplicateSlot = checkAvailability(testDate, testTime, 40);
+    assert.strictEqual(duplicateSlot.available, false, 'O horário exato não deve aceitar uma segunda reserva');
+    assert.match(duplicateSlot.reason, /já foi reservado/, 'A mensagem deve indicar que o horário já foi reservado');
+
+    const nearbySlot = checkAvailability(testDate, '11:30', 40);
+    assert.strictEqual(nearbySlot.available, true, 'Outro horário pode continuar disponível dentro da capacidade');
+
+    // Three active vehicles can overlap in service, but a fourth overlapping one exceeds bay capacity.
+    for (let i = 1; i <= 3; i++) {
       db.prepare(`
         INSERT INTO reservations (
-          reference_code, user_id, customer_name, customer_phone, vehicle_plate, 
-          vehicle_model, service_id, scheduled_date, scheduled_time, duration_minutes, 
+          reference_code, user_id, customer_name, customer_phone, vehicle_plate,
+          vehicle_model, service_id, scheduled_date, scheduled_time, duration_minutes,
           end_time, bay_number, status
-        ) VALUES (?, 1, 'Cliente Teste', '840000000', 'MC-99-99', 'VW Golf', 1, ?, ?, 40, '11:40', ?, 'reservado')
-      `).run(`REF-TEST-${i}`, testDate, testTime, avail.assignedBay);
+        ) VALUES (?, 1, 'Cliente Teste', '840000000', ?, 'VW Golf', 1, ?, '12:00', 40, '12:40', ?, 'reservado')
+      `).run(`REF-CAP-${i}`, `MC-${i}`, testDate, i);
     }
 
-    // Attempting 4th reservation must be REJECTED because capacity is 3
-    const fourthCheck = checkAvailability(testDate, testTime, 40);
-    assert.strictEqual(fourthCheck.available, false, 'A 4ª reserva em simultâneo deve ser rejeitada por falta de capacidade');
-    assert.match(fourthCheck.reason, /capacidade máxima/, 'Mensagem deve indicar capacidade máxima preenchida');
+    const capacityCheck = checkAvailability(testDate, '12:15', 40);
+    assert.strictEqual(capacityCheck.available, false, 'A 4ª viatura em simultâneo deve ser rejeitada por falta de capacidade');
+    assert.match(capacityCheck.reason, /capacidade máxima/, 'A mensagem deve indicar que a capacidade máxima está preenchida');
   });
 
   // 3. Alteração de Estados da Reserva
@@ -897,7 +909,7 @@ async function runTests() {
   test('Validação de Promoções: Códigos Ativos vs Expirados', () => {
     const activePromo = db.prepare("SELECT * FROM promotions WHERE code = 'QUARTA20'").get();
     assert.strictEqual(activePromo.is_active, 1, 'QUARTA20 deve estar ativa');
-    assert.strictEqual(activePromo.discount_percentage, 20, 'Desconto deve ser de 20%');
+    assert.strictEqual(activePromo.discount_percentage, 10, 'Desconto deve ser de 10%');
 
     // Create an expired promotion
     db.prepare(`
@@ -1094,6 +1106,60 @@ async function runTests() {
       };
 
       const promoReservation = await createReservation(fullWash.id, '09:00', promotionCode);
+      const duplicateTimeReservation = await request('/api/reservations', tokens.customer, 'POST', {
+        customer_name: customer.name,
+        customer_phone: '+258 84 555 1234',
+        vehicle_plate: 'DUP 0900 MP',
+        vehicle_model: 'Toyota Corolla',
+        service_id: fullWash.id,
+        scheduled_date: serviceDate,
+        scheduled_time: '09:00'
+      });
+      assert.strictEqual(duplicateTimeReservation.response.status, 409, 'O mesmo horário de início não pode ser reservado duas vezes.');
+      assert.match(duplicateTimeReservation.data.error, /já foi reservado/);
+
+      const customerReceiveAttempt = await request(
+        `/api/reservations/${promoReservation.id}/receive`,
+        tokens.customer,
+        'POST'
+      );
+      assert.strictEqual(customerReceiveAttempt.response.status, 403, 'Cliente não pode confirmar a receção da própria viatura.');
+      const foreignCustomerReceiveAttempt = await request(
+        `/api/reservations/${promoReservation.id}/receive`,
+        tokens.otherCustomer,
+        'POST'
+      );
+      assert.strictEqual(foreignCustomerReceiveAttempt.response.status, 403);
+
+      const receivedVehicle = await request(
+        `/api/reservations/${promoReservation.id}/receive`,
+        tokens.employee,
+        'POST'
+      );
+      assert.strictEqual(receivedVehicle.response.status, 200, receivedVehicle.data.error);
+      assert.strictEqual(receivedVehicle.data.reservation.status, 'aguardando');
+      assert.ok(receivedVehicle.data.reservation.vehicle_received_at);
+      assert.strictEqual(receivedVehicle.data.reservation.vehicle_received_by_name, employee.name);
+      const repeatedReceive = await request(
+        `/api/reservations/${promoReservation.id}/receive`,
+        tokens.employee,
+        'POST'
+      );
+      assert.strictEqual(repeatedReceive.response.status, 200);
+      assert.strictEqual(
+        db.prepare("SELECT COUNT(*) as count FROM reservation_status_history WHERE reservation_id = ? AND notes = 'Receção da viatura confirmada no balcão'").get(promoReservation.id).count,
+        1,
+        'Repetir a confirmação não pode duplicar o registo de receção.'
+      );
+      const customerReservations = await request('/api/reservations', tokens.customer);
+      const customerReceiptReservation = customerReservations.data.find(item => item.id === promoReservation.id);
+      assert.strictEqual(customerReceiptReservation.vehicle_received_by_name, employee.name);
+      assert.ok(customerReceiptReservation.vehicle_received_at);
+      const cancelAfterReceipt = await request(`/api/reservations/${promoReservation.id}/status`, tokens.customer, 'PATCH', {
+        new_status: 'cancelado'
+      });
+      assert.strictEqual(cancelAfterReceipt.response.status, 400, 'Cliente não pode cancelar depois de entregar a viatura.');
+
       const pendingPayment = await request(`/api/payments/${promoReservation.id}`, tokens.customer);
       assert.strictEqual(pendingPayment.response.status, 200, `Consulta da cobrança pendente: ${JSON.stringify(pendingPayment.data)}`);
       assert.strictEqual(pendingPayment.data.payment.status, 'pendente');
@@ -1210,6 +1276,15 @@ async function runTests() {
         false,
         'A listagem de reservas mantém o isolamento entre clientes.'
       );
+
+      const counterRegistration = await request('/api/reservations/register-completed', tokens.employee, 'POST', {
+        customer_name: 'Cliente de Balcão',
+        vehicle_plate: `REC ${Date.now().toString().slice(-4)} MP`,
+        service_id: exteriorWash.id
+      });
+      assert.strictEqual(counterRegistration.response.status, 201, counterRegistration.data.error);
+      assert.ok(counterRegistration.data.reservation.vehicle_received_at);
+      assert.strictEqual(counterRegistration.data.reservation.vehicle_received_by_name, employee.name);
     } finally {
       db.prepare('UPDATE services SET price_mzn = ? WHERE id = ?').run(fullWash.price_mzn, fullWash.id);
       await new Promise((resolve, reject) => {

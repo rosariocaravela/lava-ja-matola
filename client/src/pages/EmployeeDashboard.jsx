@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Car, CheckCircle2, Clock, Search, ShieldCheck, 
-  AlertCircle, Tag, Award, ArrowRight, PlusCircle, Sparkles, ReceiptText
+  AlertCircle, Tag, Award, ArrowRight, PlusCircle, Sparkles, ReceiptText, Download, XCircle
 } from 'lucide-react';
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
 import PaymentPanel from '../components/PaymentPanel';
+import { downloadVehicleReceipt } from '../utils/vehicleReceipt';
 
 export default function EmployeeDashboard() {
   const { user } = useAuth();
@@ -49,6 +50,15 @@ export default function EmployeeDashboard() {
     }
   }
 
+  async function confirmVehicleReceived(reservationId) {
+    try {
+      await apiRequest(`/reservations/${reservationId}/receive`, { method: 'POST' });
+      await loadDashboardData();
+    } catch (err) {
+      alert('Erro ao confirmar a receção: ' + err.message);
+    }
+  }
+
   async function handleQuickRegister(e) {
     e.preventDefault();
     setQuickError('');
@@ -88,15 +98,23 @@ export default function EmployeeDashboard() {
   }
 
   async function updateStatus(reservationId, newStatus) {
+    if (newStatus === 'cancelado' && !window.confirm('Tem a certeza de que deseja cancelar esta reserva?')) {
+      return;
+    }
+
     try {
       await apiRequest(`/reservations/${reservationId}/status`, {
         method: 'PATCH',
         body: JSON.stringify({
           new_status: newStatus,
-          notes: `${newStatus === 'concluido' ? 'Lavagem concluída' : 'Lavagem iniciada'} pelo operador ${user.name}`
+          notes: `${newStatus === 'concluido'
+            ? 'Lavagem concluída'
+            : newStatus === 'cancelado'
+              ? 'Reserva cancelada'
+              : 'Lavagem iniciada'} pelo operador ${user.name}`
         })
       });
-      loadDashboardData();
+      await loadDashboardData();
     } catch (err) {
       alert('Erro ao atualizar estado: ' + err.message);
     }
@@ -125,14 +143,27 @@ export default function EmployeeDashboard() {
             Operador: {user?.name || 'Funcionário'}
           </h1>
           <p className="text-xs text-slate-300 mt-1">
-            Registo de lavagens concluídas, atribuição direta de pontos e validação de benefícios no car wash.
+            Consulte reservas, registe lavagens e acompanhe o atendimento.
           </p>
         </div>
-
+        <nav aria-label="Atalhos do painel operacional" className="flex flex-wrap gap-2">
+          <a
+            href="#reservas"
+            className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-500"
+          >
+            Reservas
+          </a>
+          <a
+            href="#registar-lavagem"
+            className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/20"
+          >
+            Registar lavagem
+          </a>
+        </nav>
       </div>
 
       {/* Quick Wash Registration Form (Highlight Section) */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+      <div id="registar-lavagem" className="scroll-mt-24 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
         <div className="flex items-center gap-2 text-slate-900">
           <PlusCircle className="w-5 h-5 text-blue-600" />
           <h2 className="text-base font-black">Registar Lavagem Concluída no Balcão</h2>
@@ -145,14 +176,24 @@ export default function EmployeeDashboard() {
         </p>
 
         {quickSuccess && (
-          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs flex items-center justify-between animate-in fade-in">
+          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
             <div className="flex items-center gap-2.5">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               <div>
                 <strong>Lavagem concluída registada com sucesso!</strong> Ref: <span className="font-mono font-black text-blue-700">{quickSuccess.reference_code}</span> • Viatura: <strong>{quickSuccess.vehicle_plate}</strong> ({quickSuccess.service_name})
               </div>
             </div>
-            <span className="text-emerald-700 font-bold bg-emerald-100 px-2 py-1 rounded">Pronto para Levantamento</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => downloadVehicleReceipt(quickSuccess)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 font-bold text-emerald-800 hover:bg-emerald-100"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Recibo de receção
+              </button>
+              <span className="text-emerald-700 font-bold bg-emerald-100 px-2 py-1 rounded">Pronto para Levantamento</span>
+            </div>
           </div>
         )}
 
@@ -231,7 +272,7 @@ export default function EmployeeDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left: Reservations Management Board */}
         <div className="lg:col-span-8 space-y-4">
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+          <div id="reservas" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                 Reservas e atendimentos futuros ({filtered.length})
@@ -282,12 +323,13 @@ export default function EmployeeDashboard() {
                   return (
                     <div
                       key={r.id}
-                      className={`p-4 rounded-xl border transition-all shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
+                      className={`p-4 rounded-xl border transition-all shadow-xs space-y-3 ${
                         isDone ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-slate-200'
                       }`}
                     >
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
                           <span className="font-mono font-bold text-sm text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
                             {r.reference_code}
                           </span>
@@ -298,57 +340,107 @@ export default function EmployeeDashboard() {
                             ({r.vehicle_model})
                           </span>
                           <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                            isDone ? 'bg-emerald-100 text-emerald-800' : r.status === 'em_atendimento' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
+                            isDone ? 'bg-emerald-100 text-emerald-800' : r.status === 'em_atendimento' ? 'bg-blue-100 text-blue-800' : r.status === 'cancelado' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
                           }`}>
-                            {isDone ? r.payment_status === 'pago' ? 'Pago' : 'Lavagem concluída — pagamento pendente' : r.status.replace('_', ' ')}
+                            {isDone
+                              ? r.payment_status === 'pago' ? 'Concluída — paga' : 'Concluída — pagamento pendente'
+                              : r.status === 'em_atendimento' ? 'Em atendimento'
+                                : r.status === 'aguardando' ? 'À espera'
+                                  : r.status === 'cancelado' ? 'Cancelada'
+                                    : 'Agendada'}
                           </span>
                         </div>
 
-                        <div className="text-xs text-slate-600 mt-1.5 flex flex-wrap gap-x-3">
-                          <span>Serviço: <strong>{r.service_name}</strong> ({r.price_mzn} MT)</span>
-                          {isDone && (
-                            <span>Pagamento: <strong className={r.payment_status === 'pago' ? 'text-emerald-700' : 'text-amber-700'}>
-                              {r.payment_status === 'pago'
-                                ? `${r.payment_simulated ? 'Simulação paga' : 'Pago'} — ${r.amount_paid_mzn} MT`
-                                : `${Math.max(0, r.price_mzn - (r.total_discount_mzn || 0))} MT pendentes`}
-                            </strong></span>
-                          )}
-                          <span>Condutor: <strong>{r.customer_name}</strong></span>
-                          <span>Data e hora: <strong>{r.scheduled_date} às {r.scheduled_time}</strong></span>
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                            <span>Serviço: <strong>{r.service_name}</strong></span>
+                            <span>Cliente: <strong>{r.customer_name}</strong></span>
+                            <span>Data: <strong>{r.scheduled_date} às {r.scheduled_time}</strong></span>
+                          </div>
                         </div>
 
-                        {r.notes && (
-                          <div className="text-[11px] text-slate-500 bg-slate-100 rounded px-2 py-0.5 mt-1.5 inline-block">
-                            Obs: {r.notes}
+                        <details className="group shrink-0">
+                          <summary className="cursor-pointer list-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-xs font-bold text-blue-700 transition hover:bg-blue-50">
+                            Ver detalhes
+                          </summary>
+                          <div className="mt-3 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-700 sm:grid-cols-2 lg:grid-cols-3">
+                            <p>Referência: <strong>{r.reference_code}</strong></p>
+                            <p>Cliente: <strong>{r.customer_name}</strong></p>
+                            <p>Contacto: <strong>{r.customer_phone || 'Não indicado'}</strong></p>
+                            <p>Viatura: <strong>{r.vehicle_model} · {r.vehicle_plate}</strong></p>
+                            <p>Serviço: <strong>{r.service_name}</strong></p>
+                            <p>Preço: <strong>{r.price_mzn} MT</strong></p>
+                            <p>Data e hora: <strong>{r.scheduled_date} às {r.scheduled_time}</strong></p>
+                            <p>Pagamento: <strong className={r.payment_status === 'pago' ? 'text-emerald-700' : 'text-amber-700'}>
+                              {r.payment_status === 'pago'
+                                ? `${r.payment_simulated ? 'Simulado' : 'Pago'} · ${r.amount_paid_mzn} MT`
+                                : `${Math.max(0, r.price_mzn - (r.total_discount_mzn || 0))} MT por pagar`}
+                            </strong></p>
+                            {r.vehicle_received_at && (
+                              <p>Recebida por: <strong>{r.vehicle_received_by_name || 'Funcionário'}</strong></p>
+                            )}
+                            {r.notes && (
+                              <p className="sm:col-span-2 lg:col-span-3 break-words">
+                                Observações: <strong>{r.notes}</strong>
+                              </p>
+                            )}
                           </div>
-                        )}
+                        </details>
                       </div>
 
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2 shrink-0">
-                        {nextAction && (
-                          <button
-                            onClick={() => updateStatus(r.id, nextAction.status)}
-                            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>{nextAction.label}</span>
-                          </button>
-                        )}
-
-                        {isDone && (
-                          <button
-                            onClick={() => setPaymentReservationId(r.id)}
-                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm ${
-                              r.payment_status === 'pago'
-                                ? 'border border-emerald-300 bg-emerald-50 text-emerald-800'
-                                : 'bg-blue-700 text-white hover:bg-blue-800'
-                            }`}
-                          >
-                            <ReceiptText className="h-4 w-4" />
-                            <span>{r.payment_status === 'pago' ? 'Ver comprovativo' : 'Proceder ao Pagamento'}</span>
-                          </button>
-                        )}
+                      <div className="flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                        <div className="flex flex-wrap gap-2">
+                          {!isDone && !r.vehicle_received_at && ['reservado', 'aguardando', 'em_atendimento'].includes(r.status) && (
+                            <button
+                              onClick={() => confirmVehicleReceived(r.id)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              Confirmar receção
+                            </button>
+                          )}
+                          {r.vehicle_received_at && (
+                            <button
+                              onClick={() => downloadVehicleReceipt(r)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+                            >
+                              <Download className="h-4 w-4" />
+                              Recibo de receção
+                            </button>
+                          )}
+                          {['reservado', 'aguardando'].includes(r.status) && !r.vehicle_received_at && (
+                            <button
+                              onClick={() => updateStatus(r.id, 'cancelado')}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100"
+                            >
+                              <XCircle className="h-4 w-4" />
+                              Cancelar reserva
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                          {nextAction && (
+                            <button
+                              onClick={() => updateStatus(r.id, nextAction.status)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
+                            >
+                              <CheckCircle2 className="h-4 w-4" />
+                              {nextAction.label}
+                            </button>
+                          )}
+                          {isDone && (
+                            <button
+                              onClick={() => setPaymentReservationId(r.id)}
+                              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold shadow-sm transition ${
+                                r.payment_status === 'pago'
+                                  ? 'border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                  : 'bg-blue-700 text-white hover:bg-blue-800'
+                              }`}
+                            >
+                              <ReceiptText className="h-4 w-4" />
+                              {r.payment_status === 'pago' ? 'Ver pagamento' : 'Registar pagamento'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
