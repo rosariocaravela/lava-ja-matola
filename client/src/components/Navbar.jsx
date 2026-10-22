@@ -39,7 +39,7 @@ export default function Navbar({ onOpenAi, onOpenNotifications }) {
 
   const navLinks = [
     { to: '/', label: 'Início' },
-    { to: '/reservar', label: 'Marcar Lavagem' },
+    ...(user?.role === 'employee' ? [] : [{ to: '/reservar', label: 'Marcar Lavagem' }]),
     { to: '/fila', label: 'Veículos Prontos' },
     { to: '/fidelizacao', label: 'Passaporte VIP' },
   ];

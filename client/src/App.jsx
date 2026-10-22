@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -11,12 +11,14 @@ import HomePage from './pages/HomePage';
 import BookingPage from './pages/BookingPage';
 import QueuePage from './pages/QueuePage';
 import LoyaltyPage from './pages/LoyaltyPage';
-import CustomerDashboard from './pages/CustomerDashboard';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import LoginPage from './pages/LoginPage';
 import AccountSecurityPage from './pages/AccountSecurityPage';
-import { Bot, Sparkles } from 'lucide-react';
+import PasswordRecoveryPage from './pages/PasswordRecoveryPage';
+import { Bot } from 'lucide-react';
+
+const CustomerDashboard = lazy(() => import('./pages/CustomerDashboard'));
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
@@ -49,10 +51,10 @@ function MainLayout() {
   const location = useLocation();
   const { user, loading } = useAuth();
 
-  if (location.pathname === '/login') {
+  if (location.pathname === '/login' || location.pathname === '/recuperar-senha') {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-900 selection:bg-blue-600 selection:text-white">
-        <LoginPage />
+        {location.pathname === '/login' ? <LoginPage /> : <PasswordRecoveryPage />}
       </main>
     );
   }
@@ -75,6 +77,7 @@ function MainLayout() {
           <Route path="/fila" element={<QueuePage />} />
           <Route path="/fidelizacao" element={<LoyaltyPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/recuperar-senha" element={<PasswordRecoveryPage />} />
           <Route
             path="/seguranca"
             element={
@@ -88,9 +91,11 @@ function MainLayout() {
           <Route
             path="/cliente"
             element={
-              <ProtectedRoute allowedRoles={['customer']}>
-                <CustomerDashboard />
-              </ProtectedRoute>
+              <Suspense fallback={<div className="py-20 text-center text-sm text-slate-500">A carregar painel do cliente...</div>}>
+                <ProtectedRoute allowedRoles={['customer']}>
+                  <CustomerDashboard />
+                </ProtectedRoute>
+              </Suspense>
             }
           />
           <Route

@@ -20,10 +20,29 @@ router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
   const {
     name, address, phone, email, google_maps_url, coordinates,
     open_time, close_time, slot_interval_minutes, simultaneous_capacity,
+    onsite_open_time, onsite_close_time, onsite_slot_interval_minutes,
     points_per_mzn, is_demo_mode
   } = req.body;
 
   try {
+    const validTime = value => value === undefined || /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+    const currentSettings = db.prepare(`
+      SELECT onsite_open_time, onsite_close_time, onsite_slot_interval_minutes
+      FROM business_settings WHERE id = 1
+    `).get();
+    const nextOnsiteOpen = onsite_open_time ?? currentSettings.onsite_open_time;
+    const nextOnsiteClose = onsite_close_time ?? currentSettings.onsite_close_time;
+    const nextOnsiteInterval = onsite_slot_interval_minutes ?? currentSettings.onsite_slot_interval_minutes;
+    if (!validTime(onsite_open_time) || !validTime(onsite_close_time)) {
+      return res.status(400).json({ error: 'Indique horários válidos para a lavagem no local.' });
+    }
+    if (nextOnsiteOpen >= nextOnsiteClose) {
+      return res.status(400).json({ error: 'O fecho do atendimento no local deve ser posterior à abertura.' });
+    }
+    if (!Number.isInteger(Number(nextOnsiteInterval)) || Number(nextOnsiteInterval) < 15 || Number(nextOnsiteInterval) > 720) {
+      return res.status(400).json({ error: 'O intervalo entre marcações no local deve estar entre 15 e 720 minutos.' });
+    }
+
     const stmt = db.prepare(`
       UPDATE business_settings SET
         name = COALESCE(?, name),
@@ -36,6 +55,9 @@ router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
         close_time = COALESCE(?, close_time),
         slot_interval_minutes = COALESCE(?, slot_interval_minutes),
         simultaneous_capacity = COALESCE(?, simultaneous_capacity),
+        onsite_open_time = COALESCE(?, onsite_open_time),
+        onsite_close_time = COALESCE(?, onsite_close_time),
+        onsite_slot_interval_minutes = COALESCE(?, onsite_slot_interval_minutes),
         points_per_mzn = COALESCE(?, points_per_mzn),
         is_demo_mode = COALESCE(?, is_demo_mode),
         updated_at = CURRENT_TIMESTAMP
@@ -45,6 +67,7 @@ router.put('/', authenticateToken, requireRole(['admin']), (req, res) => {
     stmt.run(
       name, address, phone, email, google_maps_url, coordinates,
       open_time, close_time, slot_interval_minutes, simultaneous_capacity,
+      onsite_open_time, onsite_close_time, nextOnsiteInterval,
       points_per_mzn, is_demo_mode !== undefined ? (is_demo_mode ? 1 : 0) : undefined
     );
 

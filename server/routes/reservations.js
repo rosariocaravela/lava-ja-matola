@@ -129,12 +129,27 @@ router.post('/', optionalToken, (req, res) => {
     service_id,
     scheduled_date,
     scheduled_time,
+    booking_type = 'shop',
+    location_address,
+    created_for_customer = false,
     notes,
     promo_code
   } = req.body;
 
   if (!customer_name || !customer_phone || !vehicle_plate || !vehicle_model || !service_id || !scheduled_date || !scheduled_time) {
     return res.status(400).json({ error: 'Por favor preencha todos os campos obrigatórios.' });
+  }
+  if (!['shop', 'onsite'].includes(booking_type)) {
+    return res.status(400).json({ error: 'Selecione uma modalidade de lavagem válida.' });
+  }
+  if (typeof created_for_customer !== 'boolean') {
+    return res.status(400).json({ error: 'O tipo de marcação enviado é inválido.' });
+  }
+  if (created_for_customer && !['employee', 'admin'].includes(req.user?.role)) {
+    return res.status(403).json({ error: 'Só um funcionário pode criar uma marcação em nome de um cliente.' });
+  }
+  if (booking_type === 'onsite' && (typeof location_address !== 'string' || !location_address.trim())) {
+    return res.status(400).json({ error: 'Indique o endereço onde a equipa deverá realizar a lavagem.' });
   }
 
   try {
@@ -152,7 +167,7 @@ router.post('/', optionalToken, (req, res) => {
       : 0;
 
     // Validate availability and capacity
-    const availability = checkAvailability(scheduled_date, scheduled_time, service.duration_minutes);
+    const availability = checkAvailability(scheduled_date, scheduled_time, service.duration_minutes, null, booking_type);
     if (!availability.available) {
       return res.status(409).json({
         error: availability.reason || 'O horário selecionado não está disponível.'
@@ -165,11 +180,14 @@ router.post('/', optionalToken, (req, res) => {
       refCode = generateRefCode();
     }
 
-    const userId = req.user ? req.user.id : null;
+    const userId = created_for_customer
+      ? db.prepare("SELECT id FROM users WHERE role = 'customer' AND phone = ? AND is_active = 1").get(customer_phone.trim())?.id || null
+      : req.user ? req.user.id : null;
+    const actorUserId = req.user ? req.user.id : null;
 
     // Use transaction for reservation creation and audit log
     const createTx = db.transaction(() => {
-      const finalAvailability = checkAvailability(scheduled_date, scheduled_time, service.duration_minutes);
+      const finalAvailability = checkAvailability(scheduled_date, scheduled_time, service.duration_minutes, null, booking_type);
       if (!finalAvailability.available) {
         const availabilityError = new Error(finalAvailability.reason || 'O horário selecionado já não está disponível.');
         availabilityError.code = 'SLOT_UNAVAILABLE';
@@ -180,8 +198,8 @@ router.post('/', optionalToken, (req, res) => {
         INSERT INTO reservations (
           reference_code, user_id, customer_name, customer_phone, vehicle_plate, 
           vehicle_model, service_id, scheduled_date, scheduled_time, duration_minutes, 
-          end_time, bay_number, status, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reservado', ?)
+          end_time, bay_number, booking_type, location_address, status, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reservado', ?)
       `);
 
       const result = stmt.run(
@@ -197,6 +215,8 @@ router.post('/', optionalToken, (req, res) => {
         service.duration_minutes,
         finalAvailability.endTime,
         finalAvailability.assignedBay,
+        booking_type,
+        booking_type === 'onsite' ? location_address.trim() : null,
         notes ? notes.trim() : null
       );
 
@@ -219,7 +239,7 @@ router.post('/', optionalToken, (req, res) => {
       db.prepare(`
         INSERT INTO reservation_status_history (reservation_id, old_status, new_status, changed_by_user_id, notes)
         VALUES (?, NULL, 'reservado', ?, 'Reserva criada com sucesso')
-      `).run(reservationId, userId);
+      `).run(reservationId, actorUserId);
 
       // Notification
       if (userId) {
@@ -228,7 +248,7 @@ router.post('/', optionalToken, (req, res) => {
           VALUES (?, 'customer', 'Reserva Confirmada! 📅', ?, 'info', ?)
         `).run(
           userId,
-          `A sua reserva para ${service.name} (${refCode}) no dia ${scheduled_date} às ${scheduled_time} foi confirmada.`,
+          `A sua reserva ${booking_type === 'onsite' ? 'no local indicado' : 'nas instalações'} para ${service.name} (${refCode}) no dia ${scheduled_date} às ${scheduled_time} foi confirmada.`,
           reservationId
         );
       }
@@ -238,7 +258,7 @@ router.post('/', optionalToken, (req, res) => {
         INSERT INTO notifications (target_role, title, message, type, reservation_id)
         VALUES ('employee', 'Nova Reserva Agendada', ?, 'info', ?)
       `).run(
-        `Nova reserva ${refCode}: ${customer_name.trim()} — ${vehicle_plate.trim().toUpperCase()}, ${service.name}, para ${scheduled_date} às ${scheduled_time}.`,
+        `Nova reserva ${refCode} (${booking_type === 'onsite' ? 'lavagem no local' : 'nas instalações'}): ${customer_name.trim()} — ${vehicle_plate.trim().toUpperCase()}, ${service.name}, para ${scheduled_date} às ${scheduled_time}.${booking_type === 'onsite' ? ` Endereço: ${location_address.trim()}.` : ''}`,
         reservationId
       );
 
@@ -303,7 +323,7 @@ router.post('/register-completed', authenticateToken, requireRole(['employee', '
     // Check if customer user exists by phone
     let customerUser = null;
     if (customer_phone) {
-      customerUser = db.prepare('SELECT id FROM users WHERE phone = ?').get(customer_phone.trim());
+      customerUser = db.prepare("SELECT id FROM users WHERE role = 'customer' AND is_active = 1 AND phone = ?").get(customer_phone.trim());
     }
 
     const tx = db.transaction(() => {
@@ -410,6 +430,9 @@ router.post('/:id/receive', authenticateToken, requireRole(['employee', 'admin']
 
     if (!reservation) {
       return res.status(404).json({ error: 'Reserva não encontrada.' });
+    }
+    if (reservation.booking_type === 'onsite') {
+      return res.status(400).json({ error: 'A lavagem no local não passa pelo processo de receção de viatura no balcão.' });
     }
     const receivingUser = db.prepare('SELECT name FROM users WHERE id = ?').get(req.user.id);
     if (!receivingUser) {
@@ -581,11 +604,11 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
         UPDATE reservations 
         SET status = ?, points_awarded = ?,
             vehicle_received_at = CASE
-              WHEN ? = 'em_atendimento' AND vehicle_received_at IS NULL THEN CURRENT_TIMESTAMP
+              WHEN booking_type = 'shop' AND ? = 'em_atendimento' AND vehicle_received_at IS NULL THEN CURRENT_TIMESTAMP
               ELSE vehicle_received_at
             END,
             vehicle_received_by_user_id = CASE
-              WHEN ? = 'em_atendimento' AND vehicle_received_at IS NULL THEN ?
+              WHEN booking_type = 'shop' AND ? = 'em_atendimento' AND vehicle_received_at IS NULL THEN ?
               ELSE vehicle_received_by_user_id
             END,
             updated_at = CURRENT_TIMESTAMP
@@ -606,7 +629,9 @@ router.patch('/:id/status', authenticateToken, (req, res) => {
             VALUES (?, 'customer', 'Serviço Concluído! 🚗✨', ?, 'success', ?)
           `).run(
             reservation.user_id,
-            `A lavagem do seu ${reservation.vehicle_model} (${reservation.vehicle_plate}) foi concluída com sucesso! O veículo está pronto para levantamento.`,
+            reservation.booking_type === 'onsite'
+              ? `A lavagem da sua viatura (${reservation.vehicle_plate}) foi concluída no local indicado.`
+              : `A lavagem do seu ${reservation.vehicle_model} (${reservation.vehicle_plate}) foi concluída com sucesso! O veículo está pronto para levantamento.`,
             id
           );
         }

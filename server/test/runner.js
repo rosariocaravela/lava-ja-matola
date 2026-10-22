@@ -3,10 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 // Set test database path
 process.env.NODE_ENV = 'test';
-process.env.DB_PATH = path.join(__dirname, 'test_lavaja.db');
+process.env.DB_PATH = process.env.DB_PATH || path.join(__dirname, 'test_lavaja.db');
+process.env.GALLERY_UPLOAD_DIR = path.join(__dirname, 'test-gallery-uploads');
 process.env.JWT_SECRET = 'test-secret-key-for-lava-ja-tests-only';
 
 const fixturePasswords = {
@@ -35,6 +37,7 @@ const { checkAvailability, getAvailableSlots } = require('../utils/scheduling');
 const { awardRecurringBonusIfDue, RECURRING_BONUS_DESCRIPTION } = require('../utils/loyalty');
 const { normalizeLegacyLoyaltyBonuses } = require('../utils/loyalty-migration');
 const { generateToken } = require('../middleware/auth');
+const { calculatePayment } = require('../utils/billing');
 const reservationsRoutes = require('../routes/reservations');
 const aiRoutes = require('../routes/ai');
 const paymentsRoutes = require('../routes/payments');
@@ -42,6 +45,9 @@ const servicesRoutes = require('../routes/services');
 const promotionsRoutes = require('../routes/promotions');
 const dashboardRoutes = require('../routes/dashboard');
 const usersRoutes = require('../routes/users');
+const reviewsRoutes = require('../routes/reviews');
+const galleryRoutes = require('../routes/gallery');
+const loyaltyRoutes = require('../routes/loyalty');
 
 console.log('🧪 ===============================================');
 console.log('🧪 INICIANDO SUÍTE DE TESTES AUTOMATIZADOS: LAVA JÁ AI');
@@ -75,9 +81,400 @@ async function runTests() {
     }
   }
 
+  seedDatabase(fixturePasswords);
+
+  await testAsync('Campanha Moza conta eventos confirmados uma vez, desbloqueia e consome o benefício com segurança', async () => {
+    const previousEnvironment = {
+      secret: process.env.MOZA_TRANSACTION_WEBHOOK_SECRET,
+      target: process.env.MOZA_BENEFIT_TRANSACTION_TARGET,
+      percentage: process.env.MOZA_BENEFIT_DISCOUNT_PERCENTAGE,
+      minimum: process.env.MOZA_BENEFIT_MIN_TRANSACTION_MZN,
+      validity: process.env.MOZA_BENEFIT_VALIDITY_DAYS
+    };
+    process.env.MOZA_TRANSACTION_WEBHOOK_SECRET = 'test-moza-integration-secret-with-32-bytes-minimum';
+    process.env.MOZA_BENEFIT_TRANSACTION_TARGET = '5';
+    process.env.MOZA_BENEFIT_DISCOUNT_PERCENTAGE = '10';
+    process.env.MOZA_BENEFIT_MIN_TRANSACTION_MZN = '1';
+    process.env.MOZA_BENEFIT_VALIDITY_DAYS = '0';
+
+    const suffix = Date.now();
+    const createCustomer = db.prepare(`
+      INSERT INTO users (name, email, password_hash, role, phone)
+      VALUES (?, ?, ?, 'customer', ?)
+    `);
+    const customerId = createCustomer.run(
+      'Cliente Moza Teste',
+      `moza-${suffix}@lavaja.test`,
+      bcrypt.hashSync('test-password', 4),
+      `+25884${String(suffix).slice(-7)}`
+    ).lastInsertRowid;
+    const otherCustomerId = createCustomer.run(
+      'Outro Cliente Moza Teste',
+      `moza-outro-${suffix}@lavaja.test`,
+      bcrypt.hashSync('test-password', 4),
+      `+25885${String(suffix).slice(-7)}`
+    ).lastInsertRowid;
+    const employee = db.prepare("SELECT id, name, email, role FROM users WHERE role = 'employee' LIMIT 1").get();
+    const service = db.prepare('SELECT id, name, price_mzn, duration_minutes FROM services LIMIT 1').get();
+    const customerToken = generateToken({ id: customerId, name: 'Cliente Moza Teste', role: 'customer' });
+    const otherCustomerToken = generateToken({ id: otherCustomerId, name: 'Outro Cliente Moza Teste', role: 'customer' });
+    const employeeToken = generateToken(employee);
+    const app = express();
+    app.use(express.json());
+    app.use('/api/loyalty', loyaltyRoutes);
+    app.use('/api/payments', paymentsRoutes);
+    const server = app.listen(0, '127.0.0.1');
+    const reservationIds = [];
+
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const baseUrl = `http://127.0.0.1:${server.address().port}`;
+      const request = async (pathName, token, method = 'GET', body, extraHeaders = {}) => {
+        const response = await fetch(`${baseUrl}${pathName}`, {
+          method,
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+            ...extraHeaders
+          },
+          ...(body ? { body: JSON.stringify(body) } : {})
+        });
+        return { response, data: await response.json() };
+      };
+      const sendEvent = async (event, signed = true) => {
+        const timestamp = String(Math.floor(Date.now() / 1000));
+        const signature = crypto.createHmac('sha256', process.env.MOZA_TRANSACTION_WEBHOOK_SECRET)
+          .update(`${timestamp}.${JSON.stringify(event)}`)
+          .digest('hex');
+        return request('/api/loyalty/moza/transaction-events', null, 'POST', event, signed ? {
+          'X-Moza-Timestamp': timestamp,
+          'X-Moza-Signature': signature
+        } : {});
+      };
+
+      const initialProgress = await request('/api/loyalty/moza-benefits', customerToken);
+      assert.strictEqual(initialProgress.response.status, 200);
+      assert.strictEqual(initialProgress.data.cycle.confirmedTransactions, 0);
+      const forgedEvent = await sendEvent({
+        event_id: `MOZA-TEST-EVENT-${suffix}-FORGED`,
+        provider_transaction_id: `MOZA-TEST-TX-${suffix}-FORGED`,
+        user_id: customerId,
+        amount_mzn: 100,
+        currency: 'MZN',
+        status: 'confirmed',
+        occurred_at: new Date().toISOString()
+      }, false);
+      assert.strictEqual(forgedEvent.response.status, 401, 'O cliente não pode alterar o progresso sem assinatura da origem.');
+
+      const cancelled = await sendEvent({
+        event_id: `MOZA-TEST-EVENT-${suffix}-CANCELLED`,
+        provider_transaction_id: `MOZA-TEST-TX-${suffix}-CANCELLED`,
+        user_id: customerId,
+        amount_mzn: 100,
+        currency: 'MZN',
+        status: 'cancelled',
+        occurred_at: new Date().toISOString()
+      });
+      assert.strictEqual(cancelled.response.status, 202);
+      let progress = await request('/api/loyalty/moza-benefits', customerToken);
+      assert.strictEqual(progress.data.cycle.confirmedTransactions, 0, 'Transação cancelada não aumenta o progresso.');
+
+      for (let index = 1; index <= 4; index++) {
+        const event = {
+          event_id: `MOZA-TEST-EVENT-${suffix}-${index}`,
+          provider_transaction_id: `MOZA-TEST-TX-${suffix}-${index}`,
+          user_id: customerId,
+          amount_mzn: 100 + index,
+          currency: 'MZN',
+          status: 'confirmed',
+          occurred_at: new Date().toISOString()
+        };
+        const result = await sendEvent(event);
+        assert.strictEqual(result.response.status, 202, result.data.error);
+        progress = await request('/api/loyalty/moza-benefits', customerToken);
+        assert.strictEqual(progress.data.cycle.confirmedTransactions, index);
+        assert.strictEqual(progress.data.cycle.status, 'in_progress', `${index} transações não desbloqueiam o benefício.`);
+      }
+
+      const fifthEvent = {
+        event_id: `MOZA-TEST-EVENT-${suffix}-5`,
+        provider_transaction_id: `MOZA-TEST-TX-${suffix}-5`,
+        user_id: customerId,
+        amount_mzn: 105,
+        currency: 'MZN',
+        status: 'confirmed',
+        occurred_at: new Date().toISOString()
+      };
+      const fifthResult = await sendEvent(fifthEvent);
+      assert.strictEqual(fifthResult.response.status, 202);
+      assert.strictEqual(fifthResult.data.confirmedTransactions, 5);
+      assert.strictEqual(fifthResult.data.status, 'unlocked');
+
+      const duplicateEvent = await sendEvent(fifthEvent);
+      assert.strictEqual(duplicateEvent.response.status, 200);
+      assert.strictEqual(duplicateEvent.data.duplicate, true);
+      const conflictingEventReplay = await sendEvent({ ...fifthEvent, amount_mzn: 999 });
+      assert.strictEqual(conflictingEventReplay.response.status, 409, 'Um mesmo ID de evento não pode ser reutilizado com outro conteúdo.');
+      const duplicateTransaction = await sendEvent({
+        ...fifthEvent,
+        event_id: `MOZA-TEST-EVENT-${suffix}-5-REDELIVERED`
+      });
+      assert.strictEqual(duplicateTransaction.response.status, 202);
+      progress = await request('/api/loyalty/moza-benefits', customerToken);
+      assert.strictEqual(progress.data.cycle.confirmedTransactions, 5, 'A mesma referência externa não conta duas vezes.');
+      assert.strictEqual(progress.data.campaign.discountPercentage, 10);
+
+      const preUseReversal = await sendEvent({
+        event_id: `MOZA-TEST-EVENT-${suffix}-1-REVERSAL`,
+        provider_transaction_id: `MOZA-TEST-TX-${suffix}-1`,
+        user_id: customerId,
+        amount_mzn: 101,
+        currency: 'MZN',
+        status: 'reversed',
+        occurred_at: new Date().toISOString()
+      });
+      assert.strictEqual(preUseReversal.response.status, 202);
+      progress = await request('/api/loyalty/moza-benefits', customerToken);
+      assert.strictEqual(progress.data.cycle.confirmedTransactions, 4);
+      assert.strictEqual(progress.data.cycle.status, 'in_progress', 'A reversão antes do uso volta a bloquear o desconto.');
+      const prematureClaim = await request('/api/loyalty/moza-benefits/claim', customerToken, 'POST', {});
+      assert.strictEqual(prematureClaim.response.status, 409);
+      const replacementTransaction = await sendEvent({
+        event_id: `MOZA-TEST-EVENT-${suffix}-6`,
+        provider_transaction_id: `MOZA-TEST-TX-${suffix}-6`,
+        user_id: customerId,
+        amount_mzn: 106,
+        currency: 'MZN',
+        status: 'confirmed',
+        occurred_at: new Date().toISOString()
+      });
+      assert.strictEqual(replacementTransaction.response.status, 202);
+      progress = await request('/api/loyalty/moza-benefits', customerToken);
+      assert.strictEqual(progress.data.cycle.confirmedTransactions, 5);
+      assert.strictEqual(progress.data.cycle.status, 'unlocked');
+
+      const otherCustomerBenefits = await request('/api/loyalty/moza-benefits', otherCustomerToken);
+      assert.strictEqual(otherCustomerBenefits.response.status, 200);
+      assert.strictEqual(otherCustomerBenefits.data.cycle.confirmedTransactions, 0);
+      const otherCustomerClaim = await request('/api/loyalty/moza-benefits/claim', otherCustomerToken, 'POST', {});
+      assert.strictEqual(otherCustomerClaim.response.status, 409, 'Outro cliente não pode reclamar o benefício alheio.');
+
+      const claim = await request('/api/loyalty/moza-benefits/claim', customerToken, 'POST', {});
+      assert.strictEqual(claim.response.status, 200);
+      assert.ok(claim.data.benefit.code.startsWith('MOZA-'));
+      const repeatedClaim = await request('/api/loyalty/moza-benefits/claim', customerToken, 'POST', {});
+      assert.strictEqual(repeatedClaim.data.benefit.code, claim.data.benefit.code, 'Repetir a ação não deve emitir códigos adicionais.');
+
+      const today = new Date().toISOString().slice(0, 10);
+      const reservation = db.prepare(`
+        INSERT INTO reservations (
+          reference_code, user_id, customer_name, customer_phone, vehicle_plate, vehicle_model,
+          service_id, scheduled_date, scheduled_time, duration_minutes, end_time, status
+        ) VALUES (?, ?, 'Cliente Moza Teste', ?, ?, 'Viatura Moza', ?, ?, '10:00', ?, '10:30', 'concluido')
+      `).run(
+        `LJ-MOZA-${suffix}`,
+        customerId,
+        `+25884${String(suffix).slice(-7)}`,
+        `MOZA${String(suffix).slice(-4)}`,
+        service.id,
+        today,
+        service.duration_minutes
+      );
+      const reservationId = reservation.lastInsertRowid;
+      reservationIds.push(reservationId);
+      db.prepare('INSERT INTO reservation_payments (reservation_id, original_amount_mzn) VALUES (?, ?)')
+        .run(reservationId, service.price_mzn);
+
+      const preview = await request(`/api/payments/${reservationId}/preview-voucher`, employeeToken, 'POST', {
+        code: claim.data.benefit.code,
+        method: 'balcao'
+      });
+      assert.strictEqual(preview.response.status, 200, preview.data.error);
+      assert.strictEqual(
+        preview.data.payment.reward_discount_mzn,
+        Math.round(service.price_mzn * 0.1 * 100) / 100
+      );
+      assert.strictEqual(preview.data.payment.benefit_source, 'moza');
+
+      const paid = await request(`/api/payments/${reservationId}/confirm`, employeeToken, 'POST', {
+        code: claim.data.benefit.code,
+        method: 'balcao'
+      });
+      assert.strictEqual(paid.response.status, 200, paid.data.error);
+      assert.strictEqual(paid.data.payment.status, 'pago');
+      assert.strictEqual(paid.data.payment.simulated, false);
+
+      const secondReservation = db.prepare(`
+        INSERT INTO reservations (
+          reference_code, user_id, customer_name, customer_phone, vehicle_plate, vehicle_model,
+          service_id, scheduled_date, scheduled_time, duration_minutes, end_time, status
+        ) VALUES (?, ?, 'Cliente Moza Teste', ?, ?, 'Viatura Moza', ?, ?, '11:00', ?, '11:30', 'concluido')
+      `).run(
+        `LJ-MOZA-2-${suffix}`,
+        customerId,
+        `+25884${String(suffix).slice(-7)}`,
+        `MZ2${String(suffix).slice(-4)}`,
+        service.id,
+        today,
+        service.duration_minutes
+      );
+      const secondReservationId = secondReservation.lastInsertRowid;
+      reservationIds.push(secondReservationId);
+      db.prepare('INSERT INTO reservation_payments (reservation_id, original_amount_mzn) VALUES (?, ?)')
+        .run(secondReservationId, service.price_mzn);
+      const reused = await request(`/api/payments/${secondReservationId}/preview-voucher`, employeeToken, 'POST', {
+        code: claim.data.benefit.code,
+        method: 'balcao'
+      });
+      assert.strictEqual(reused.response.status, 409, 'O mesmo benefício não pode ser utilizado duas vezes.');
+      assert.match(reused.data.error, /já foi utilizado/i);
+      progress = await request('/api/loyalty/moza-benefits', customerToken);
+      assert.strictEqual(progress.data.cycle.number, 2, 'Após usar o desconto inicia um novo ciclo.');
+      assert.strictEqual(progress.data.cycle.confirmedTransactions, 0);
+      assert.strictEqual(progress.data.history[0].status, 'used');
+
+      const reversedEvent = {
+        ...fifthEvent,
+        event_id: `MOZA-TEST-EVENT-${suffix}-REVERSAL`,
+        status: 'reversed'
+      };
+      const reversal = await sendEvent(reversedEvent);
+      assert.strictEqual(reversal.response.status, 202);
+      const resurrectedEvent = await sendEvent({
+        ...fifthEvent,
+        event_id: `MOZA-TEST-EVENT-${suffix}-AFTER-REVERSAL`
+      });
+      assert.strictEqual(resurrectedEvent.response.status, 409, 'Uma transação revertida não pode voltar a contar.');
+      const oldCycle = db.prepare('SELECT status FROM moza_benefit_cycles WHERE user_id = ? AND cycle_number = 1').get(customerId);
+      assert.strictEqual(oldCycle.status, 'used', 'Reversões posteriores não podem apagar um desconto já consumido.');
+      assert.strictEqual(
+        db.prepare('SELECT COUNT(*) AS count FROM moza_transactions WHERE user_id = ? AND status = ?').get(customerId, 'reversed').count,
+        2
+      );
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+      if (reservationIds.length) {
+        db.prepare(`DELETE FROM reservations WHERE id IN (${reservationIds.map(() => '?').join(',')})`).run(...reservationIds);
+      }
+      db.prepare('DELETE FROM users WHERE id IN (?, ?)').run(customerId, otherCustomerId);
+      for (const [key, value] of Object.entries(previousEnvironment)) {
+        const envKey = {
+          secret: 'MOZA_TRANSACTION_WEBHOOK_SECRET',
+          target: 'MOZA_BENEFIT_TRANSACTION_TARGET',
+          percentage: 'MOZA_BENEFIT_DISCOUNT_PERCENTAGE',
+          minimum: 'MOZA_BENEFIT_MIN_TRANSACTION_MZN',
+          validity: 'MOZA_BENEFIT_VALIDITY_DAYS'
+        }[key];
+        if (value === undefined) delete process.env[envKey];
+        else process.env[envKey] = value;
+      }
+    }
+  });
+
+  await testAsync('Gestor carrega, aprova e remove fotografias autorizadas da galeria pública', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/gallery', galleryRoutes);
+    const server = app.listen(0, '127.0.0.1');
+    const admin = db.prepare("SELECT * FROM users WHERE role = 'admin' LIMIT 1").get();
+    const adminToken = generateToken(admin);
+    const baseUrl = await new Promise((resolve, reject) => {
+      server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}/api/gallery`));
+      server.once('error', reject);
+    });
+
+    let galleryPhotoId = null;
+    try {
+      const samplePng = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8ioAAAAASUVORK5CYII=',
+        'base64'
+      );
+      const upload = async (authorization = 'true', body = samplePng) => fetch(`${baseUrl}/manage?${new URLSearchParams({
+        title: 'Lavagem concluída',
+        alt_text: 'Viatura limpa no estabelecimento',
+        authorized: authorization
+      })}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          'Content-Type': 'application/octet-stream'
+        },
+        body
+      });
+
+      const noConsent = await upload('false');
+      assert.strictEqual(noConsent.status, 400);
+      const invalidImage = await upload('true', Buffer.from('not an image'));
+      assert.strictEqual(invalidImage.status, 415);
+      const uploaded = await upload();
+      const uploadData = await uploaded.json();
+      assert.strictEqual(uploaded.status, 201, uploadData.error);
+      galleryPhotoId = uploadData.photo.id;
+      assert.strictEqual(uploadData.photo.is_published, 0);
+      const savedPhoto = db.prepare('SELECT filename FROM site_photos WHERE id = ?').get(galleryPhotoId);
+      assert.ok(
+        savedPhoto && fs.existsSync(path.join(process.env.GALLERY_UPLOAD_DIR, savedPhoto.filename)),
+        'O ficheiro da fotografia deve ser guardado no diretório configurado.'
+      );
+
+      const publicBeforeApproval = await fetch(baseUrl);
+      assert.deepStrictEqual(await publicBeforeApproval.json(), []);
+      const privatePreview = await fetch(`${baseUrl}/manage/${uploadData.photo.id}/image`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      assert.strictEqual(privatePreview.status, 200, `A pré-visualização privada falhou: ${await privatePreview.text()}`);
+      assert.strictEqual(privatePreview.headers.get('content-type'), 'image/png');
+
+      const published = await fetch(`${baseUrl}/manage/${uploadData.photo.id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_published: true })
+      });
+      assert.strictEqual(published.status, 200);
+      const publicAfterApproval = await fetch(baseUrl);
+      assert.strictEqual((await publicAfterApproval.json()).length, 1);
+      const publicImage = await fetch(`${baseUrl}/${uploadData.photo.id}/image`);
+      assert.strictEqual(publicImage.status, 200, `A imagem publicada falhou: ${await publicImage.text()}`);
+
+      const removed = await fetch(`${baseUrl}/manage/${uploadData.photo.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      assert.strictEqual(removed.status, 200);
+      assert.strictEqual((await fetch(`${baseUrl}/${uploadData.photo.id}/image`)).status, 404);
+    } finally {
+      await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      if (galleryPhotoId) db.prepare('DELETE FROM site_photos WHERE id = ?').run(galleryPhotoId);
+      fs.rmSync(process.env.GALLERY_UPLOAD_DIR, { recursive: true, force: true });
+    }
+  });
+
+  test('Desconto Moza calcula 10% uma única vez sobre o valor elegível restante', () => {
+    const calculation = calculatePayment(500, 100, {
+      benefit_type: 'discount',
+      discount_mzn: 50,
+      redemption_code: 'RESG-TESTE'
+    }, {
+      method: 'mozabanco',
+      mozabancoDiscountEnabled: true
+    });
+    assert.strictEqual(calculation.promotion_discount_mzn, 100);
+    assert.strictEqual(calculation.reward_discount_mzn, 50);
+    assert.strictEqual(calculation.mozabanco_discount_mzn, 35);
+    assert.strictEqual(calculation.total_discount_mzn, 185);
+    assert.strictEqual(calculation.amount_due_mzn, 315);
+    assert.strictEqual(calculatePayment(500, 0, null, {
+      method: 'mozabanco',
+      mozabancoDiscountEnabled: false
+    }).mozabanco_discount_mzn, 0);
+  });
+
   // 1. Seed test database
   test('Inicialização e Seeding da Base de Dados', () => {
-    seedDatabase(fixturePasswords);
+    if (!db.prepare('SELECT id FROM users LIMIT 1').get()) seedDatabase(fixturePasswords);
     const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
     assert.strictEqual(userCount >= 4, true, 'Devem existir utilizadores semeados');
 
@@ -381,6 +778,67 @@ async function runTests() {
         headers: { Authorization: `Bearer ${customerLogin.token}` }
       });
       assert.strictEqual(customerStaffResponse.status, 403);
+      const originalSmtpSettings = Object.fromEntries(
+        ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM'].map(key => [key, process.env[key]])
+      );
+      const resetTestEmail = 'password-reset@lavaja.co.mz';
+      const resetTestPassword = 'customer-old-secure-password';
+      const resetTestUser = db.prepare(`
+        INSERT INTO users (name, email, password_hash, role, is_active)
+        VALUES (?, ?, ?, 'customer', 1)
+      `).run('Teste de Recuperação', resetTestEmail, bcrypt.hashSync(resetTestPassword, 10));
+      let unavailableRecoveryStatus;
+      try {
+        for (const key of Object.keys(originalSmtpSettings)) delete process.env[key];
+        const unavailableRecoveryResponse = await fetch(`${baseUrl}/auth/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: resetTestEmail })
+        });
+        unavailableRecoveryStatus = unavailableRecoveryResponse.status;
+      } finally {
+        for (const [key, value] of Object.entries(originalSmtpSettings)) {
+          if (value !== undefined) process.env[key] = value;
+        }
+      }
+      assert.strictEqual(unavailableRecoveryStatus, 503, 'A interface deve indicar que falta configurar o envio de email.');
+
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+      db.prepare(`
+        INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+        VALUES (?, ?, datetime('now', '+30 minutes'))
+      `).run(resetTestUser.lastInsertRowid, resetTokenHash);
+      const oldPasswordLogin = await fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetTestEmail, password: resetTestPassword })
+      });
+      const oldPasswordSession = await oldPasswordLogin.json();
+      assert.strictEqual(oldPasswordLogin.status, 200);
+      const resetResponse = await fetch(`${baseUrl}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, newPassword: 'customer-new-secure-password' })
+      });
+      const resetData = await resetResponse.json();
+      assert.strictEqual(resetResponse.status, 200, resetData.error);
+      const reusedResetToken = await fetch(`${baseUrl}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: resetToken, newPassword: 'customer-another-password' })
+      });
+      assert.strictEqual(reusedResetToken.status, 400, 'O link de redefinição só pode ser usado uma vez.');
+      const resetLogin = await fetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetTestEmail, password: 'customer-new-secure-password' })
+      });
+      assert.strictEqual(resetLogin.status, 200);
+      const revokedCustomerSession = await fetch(`${baseUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${oldPasswordSession.token}` }
+      });
+      assert.strictEqual(revokedCustomerSession.status, 401, 'A redefinição deve invalidar as sessões anteriores.');
     } finally {
       await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
     }
@@ -813,6 +1271,48 @@ async function runTests() {
     assert.match(capacityCheck.reason, /capacidade máxima/, 'A mensagem deve indicar que a capacidade máxima está preenchida');
   });
 
+  test('Disponibilidade da lavagem no local é separada das vagas do estabelecimento', () => {
+    const testDate = '2026-12-15';
+    const onsiteSlot = checkAvailability(testDate, '10:00', 30, null, 'onsite');
+    assert.strictEqual(onsiteSlot.available, true, 'A equipa móvel deve ter disponibilidade própria');
+
+    const onsiteSlots = getAvailableSlots(testDate, 30, 'onsite');
+    assert.deepStrictEqual(
+      onsiteSlots.slots.map(slot => slot.time),
+      ['08:00', '10:00', '12:00', '14:00', '16:00'],
+      'As marcações no local devem ser geradas de duas em duas horas'
+    );
+    assert.strictEqual(
+      checkAvailability(testDate, '09:00', 30, null, 'onsite').available,
+      false,
+      'Não deve aceitar horários fora do intervalo da equipa móvel'
+    );
+
+    db.prepare(`
+      INSERT INTO reservations (
+        reference_code, user_id, customer_name, customer_phone, vehicle_plate,
+        vehicle_model, service_id, scheduled_date, scheduled_time, duration_minutes,
+        end_time, bay_number, booking_type, location_address, status
+      ) VALUES ('REF-ONSITE-1', 1, 'Cliente Teste', '840000000', 'MOB-01', 'VW Golf', 1, ?, '10:00', 30, '10:30', 1, 'onsite', 'Matola', 'reservado')
+    `).run(testDate);
+
+    assert.strictEqual(
+      checkAvailability(testDate, '10:00', 30, null, 'shop').available,
+      true,
+      'Uma marcação móvel não deve ocupar uma vaga do estabelecimento'
+    );
+    assert.strictEqual(
+      checkAvailability(testDate, '10:00', 30, null, 'onsite').available,
+      false,
+      'A equipa móvel não pode atender dois locais ao mesmo tempo'
+    );
+    assert.strictEqual(
+      checkAvailability(testDate, '07:30', 30, null, 'onsite').available,
+      false,
+      'A lavagem no local deve respeitar o horário configurado para esse serviço'
+    );
+  });
+
   // 3. Alteração de Estados da Reserva
   test('Fluxo e Alteração de Estados da Lavagem', () => {
     // Insert a fresh reservation
@@ -1030,17 +1530,21 @@ async function runTests() {
   });
 
   await testAsync('Fluxo de cobrança pós-lavagem, vouchers, pagamentos e permissões', async () => {
-    const customer = db.prepare("SELECT id, name, email, role FROM users WHERE email = 'cliente@lavaja.co.mz'").get();
+    const customer = db.prepare("SELECT id, name, email, role, phone FROM users WHERE email = 'cliente@lavaja.co.mz'").get();
     const otherCustomer = db.prepare("SELECT id, name, email, role FROM users WHERE email = 'maria@gmail.com'").get();
     const employee = db.prepare("SELECT id, name, email, role FROM users WHERE role = 'employee' LIMIT 1").get();
     const fullWash = db.prepare("SELECT id, price_mzn, points_reward FROM services WHERE name LIKE 'Lavagem Completa%'").get();
-    const exteriorWash = db.prepare("SELECT id, price_mzn FROM services WHERE name = 'Lavagem Exterior'").get();
+    const exteriorWash = db.prepare("SELECT id, price_mzn, points_reward FROM services WHERE name = 'Lavagem Exterior'").get();
     const discountReward = db.prepare("SELECT id FROM rewards WHERE title = 'Desconto de 100 MT na Lavagem Completa'").get();
     const freeWashReward = db.prepare("SELECT id FROM rewards WHERE title = 'Lavagem Exterior Grátis'").get();
     const now = new Date();
     now.setDate(now.getDate() + 30);
     const serviceDate = now.toISOString().split('T')[0];
     const promotionCode = `TESTPAY${Date.now()}`;
+    const previousMozaSimulationSetting = process.env.MOZABANCO_SIMULATION_ENABLED;
+    const previousMozaDiscountSetting = process.env.MOZABANCO_DISCOUNT_ENABLED;
+    process.env.MOZABANCO_SIMULATION_ENABLED = 'false';
+    process.env.MOZABANCO_DISCOUNT_ENABLED = 'false';
     db.prepare(`
       INSERT INTO promotions (title, code, discount_percentage, start_date, end_date, is_active)
       VALUES ('Promoção de teste de pagamento', ?, 20, ?, ?, 1)
@@ -1050,6 +1554,7 @@ async function runTests() {
     app.use(express.json());
     app.use('/api/reservations', reservationsRoutes);
     app.use('/api/payments', paymentsRoutes);
+    app.use('/api/reviews', reviewsRoutes);
     const server = app.listen(0, '127.0.0.1');
 
     try {
@@ -1104,6 +1609,98 @@ async function runTests() {
           VALUES (?, ?, ?, ?, ?)
         `).run(userId, rewardId, 100, code, expiresAt);
       };
+
+      const staffBookingPayload = {
+        customer_name: customer.name,
+        customer_phone: customer.phone || '+258 84 555 1234',
+        vehicle_plate: 'STAFF 0800 MP',
+        vehicle_model: 'Toyota Corolla',
+        service_id: fullWash.id,
+        scheduled_date: serviceDate,
+        scheduled_time: '08:00',
+        created_for_customer: true
+      };
+      const customerCannotCreateOnBehalf = await request(
+        '/api/reservations',
+        tokens.customer,
+        'POST',
+        staffBookingPayload
+      );
+      assert.strictEqual(customerCannotCreateOnBehalf.response.status, 403);
+
+      const staffCreatedBooking = await request(
+        '/api/reservations',
+        tokens.employee,
+        'POST',
+        staffBookingPayload
+      );
+      assert.strictEqual(staffCreatedBooking.response.status, 201, staffCreatedBooking.data.error);
+      assert.strictEqual(staffCreatedBooking.data.reservation.user_id, customer.id);
+      assert.strictEqual(
+        db.prepare('SELECT changed_by_user_id FROM reservation_status_history WHERE reservation_id = ?').get(staffCreatedBooking.data.reservation.id).changed_by_user_id,
+        employee.id,
+        'O histórico deve identificar o funcionário que criou a marcação.'
+      );
+
+      const unlinkedStaffBooking = await request('/api/reservations', tokens.employee, 'POST', {
+        ...staffBookingPayload,
+        customer_phone: '+258 84 000 0000',
+        vehicle_plate: 'STAFF 0830 MP',
+        scheduled_time: '08:30'
+      });
+      assert.strictEqual(unlinkedStaffBooking.response.status, 201, unlinkedStaffBooking.data.error);
+      assert.strictEqual(
+        unlinkedStaffBooking.data.reservation.user_id,
+        null,
+        'Uma marcação sem conta correspondente não deve ficar associada à conta do funcionário.'
+      );
+
+      const onsiteWithoutAddress = await request('/api/reservations', tokens.customer, 'POST', {
+        customer_name: customer.name,
+        customer_phone: '+258 84 555 1234',
+        vehicle_plate: 'MOB 0900 MP',
+        vehicle_model: 'Toyota Corolla',
+        service_id: fullWash.id,
+        scheduled_date: serviceDate,
+        scheduled_time: '10:00',
+        booking_type: 'onsite'
+      });
+      assert.strictEqual(onsiteWithoutAddress.response.status, 400, 'A lavagem no local exige um endereço.');
+
+      const onsiteReservationResponse = await request('/api/reservations', tokens.customer, 'POST', {
+        customer_name: customer.name,
+        customer_phone: '+258 84 555 1234',
+        vehicle_plate: 'MOB 0900 MP',
+        vehicle_model: 'Toyota Corolla',
+        service_id: fullWash.id,
+        scheduled_date: serviceDate,
+        scheduled_time: '10:00',
+        booking_type: 'onsite',
+        location_address: 'Condomínio de teste, Matola'
+      });
+      assert.strictEqual(onsiteReservationResponse.response.status, 201, onsiteReservationResponse.data.error);
+      assert.strictEqual(onsiteReservationResponse.data.reservation.booking_type, 'onsite');
+      assert.strictEqual(onsiteReservationResponse.data.reservation.location_address, 'Condomínio de teste, Matola');
+      const duplicateOnsite = await request('/api/reservations', tokens.customer, 'POST', {
+        customer_name: customer.name,
+        customer_phone: '+258 84 555 1234',
+        vehicle_plate: 'MOB 0901 MP',
+        vehicle_model: 'Toyota Corolla',
+        service_id: fullWash.id,
+        scheduled_date: serviceDate,
+        scheduled_time: '10:00',
+        booking_type: 'onsite',
+        location_address: 'Outro local, Matola'
+      });
+      assert.strictEqual(duplicateOnsite.response.status, 409, 'Uma equipa móvel não pode ser reservada para dois locais ao mesmo tempo.');
+      const startOnsiteService = await request(
+        `/api/reservations/${onsiteReservationResponse.data.reservation.id}/status`,
+        tokens.employee,
+        'PATCH',
+        { new_status: 'em_atendimento' }
+      );
+      assert.strictEqual(startOnsiteService.response.status, 200, startOnsiteService.data.error);
+      assert.strictEqual(startOnsiteService.data.reservation.vehicle_received_at, null, 'O atendimento móvel não deve registar receção no balcão.');
 
       const promoReservation = await createReservation(fullWash.id, '09:00', promotionCode);
       const duplicateTimeReservation = await request('/api/reservations', tokens.customer, 'POST', {
@@ -1266,6 +1863,104 @@ async function runTests() {
       assert.strictEqual(freePreview.data.payment.amount_due_mzn, 0, 'Benefício de serviço aplicável cobre o preço do serviço correspondente.');
       assert.strictEqual(freePreview.data.payment.reward_service_name, 'Lavagem Exterior');
 
+      const mozaReservation = await createReservation(exteriorWash.id, '16:00');
+      await completeReservation(mozaReservation);
+      const unavailableMozaPayment = await request(
+        `/api/payments/${mozaReservation.id}/confirm`,
+        tokens.customer,
+        'POST',
+        { method: 'mozabanco' }
+      );
+      assert.strictEqual(unavailableMozaPayment.response.status, 409);
+
+      process.env.MOZABANCO_SIMULATION_ENABLED = 'true';
+      process.env.MOZABANCO_DISCOUNT_ENABLED = 'true';
+      const mozaPreview = await request(
+        `/api/payments/${mozaReservation.id}/preview-voucher`,
+        tokens.customer,
+        'POST',
+        { code: '', method: 'mozabanco' }
+      );
+      assert.strictEqual(mozaPreview.response.status, 200, mozaPreview.data.error);
+      assert.strictEqual(mozaPreview.data.payment.original_amount_mzn, 250);
+      assert.strictEqual(mozaPreview.data.payment.mozabanco_discount_mzn, 25);
+      assert.strictEqual(mozaPreview.data.payment.amount_due_mzn, 225);
+
+      const mozaPayment = await request(
+        `/api/payments/${mozaReservation.id}/confirm`,
+        tokens.customer,
+        'POST',
+        { method: 'mozabanco', amount: 1, discount_mzn: 99999 }
+      );
+      assert.strictEqual(mozaPayment.response.status, 200, mozaPayment.data.error);
+      assert.strictEqual(mozaPayment.data.payment.mozabanco_discount_mzn, 25);
+      assert.strictEqual(mozaPayment.data.payment.amount_paid_mzn, 225);
+      assert.strictEqual(mozaPayment.data.payment.total_discount_mzn, 25);
+      assert.strictEqual(mozaPayment.data.payment.simulated, true);
+
+      const mozaReceipt = await request(`/api/payments/${mozaReservation.id}`, tokens.customer);
+      assert.strictEqual(mozaReceipt.data.payment.mozabanco_discount_mzn, 25);
+      assert.strictEqual(mozaReceipt.data.payment.amount_paid_mzn, 225);
+
+      const reviewReservation = await createReservation(fullWash.id, '17:00');
+      const reviewBeforeCompletion = await request('/api/reviews', tokens.customer, 'POST', {
+        reservation_id: reviewReservation.id,
+        rating: 5,
+        comment: 'Atendimento excelente.'
+      });
+      assert.strictEqual(reviewBeforeCompletion.response.status, 409);
+      await completeReservation(reviewReservation);
+
+      if (!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'business_units'").get()) {
+        db.exec(`
+          CREATE TABLE business_units (
+            id INTEGER PRIMARY KEY,
+            is_primary INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+          )
+        `);
+      }
+      db.prepare(`
+        INSERT OR IGNORE INTO business_units (id, is_primary, is_active)
+        VALUES (1, 1, 1)
+      `).run();
+      if (!db.prepare('PRAGMA table_info(reservations)').all().some(column => column.name === 'unit_id')) {
+        db.exec('ALTER TABLE reservations ADD COLUMN unit_id INTEGER');
+      }
+      db.prepare('UPDATE reservations SET unit_id = 1 WHERE id = ?').run(reviewReservation.id);
+      if (!db.prepare('PRAGMA table_info(reviews)').all().some(column => column.name === 'unit_id')) {
+        db.exec('ALTER TABLE reviews ADD COLUMN unit_id INTEGER NOT NULL DEFAULT 1');
+      }
+
+      const reviewResponse = await request('/api/reviews', tokens.customer, 'POST', {
+        reservation_id: reviewReservation.id,
+        rating: 5,
+        comment: 'Atendimento excelente.'
+      });
+      assert.strictEqual(reviewResponse.response.status, 201, reviewResponse.data.error);
+      assert.strictEqual(
+        db.prepare('SELECT unit_id FROM reviews WHERE reservation_id = ?').get(reviewReservation.id).unit_id,
+        1,
+        'A avaliação deve ficar associada à unidade da marcação.'
+      );
+      const duplicateReview = await request('/api/reviews', tokens.customer, 'POST', {
+        reservation_id: reviewReservation.id,
+        rating: 4,
+        comment: 'Avaliação duplicada.'
+      });
+      assert.strictEqual(duplicateReview.response.status, 409);
+      const publicReviews = await request('/api/reviews');
+      assert.strictEqual(publicReviews.data.reviews[0].rating, 5);
+      assert.strictEqual(publicReviews.data.reviews[0].comment, 'Atendimento excelente.');
+      const customerReviews = await request('/api/reviews/mine', tokens.customer);
+      assert.ok(customerReviews.data.some(review => review.reservation_id === reviewReservation.id));
+      const otherCustomerReview = await request('/api/reviews', tokens.otherCustomer, 'POST', {
+        reservation_id: reviewReservation.id,
+        rating: 5,
+        comment: 'Não sou o titular.'
+      });
+      assert.strictEqual(otherCustomerReview.response.status, 404);
+
       const receiptAccess = await request(`/api/payments/${promoReservation.id}`, tokens.customer);
       assert.strictEqual(receiptAccess.response.status, 200, `Consulta do comprovativo: ${JSON.stringify(receiptAccess.data)}`);
       assert.strictEqual(receiptAccess.data.payment.promotion_discount_mzn, 90);
@@ -1277,15 +1972,27 @@ async function runTests() {
         'A listagem de reservas mantém o isolamento entre clientes.'
       );
 
+      const pointsBeforeCounterRegistration = db.prepare('SELECT balance_points FROM loyalty_accounts WHERE user_id = ?').get(customer.id).balance_points;
       const counterRegistration = await request('/api/reservations/register-completed', tokens.employee, 'POST', {
         customer_name: 'Cliente de Balcão',
+        customer_phone: customer.phone,
         vehicle_plate: `REC ${Date.now().toString().slice(-4)} MP`,
         service_id: exteriorWash.id
       });
       assert.strictEqual(counterRegistration.response.status, 201, counterRegistration.data.error);
       assert.ok(counterRegistration.data.reservation.vehicle_received_at);
       assert.strictEqual(counterRegistration.data.reservation.vehicle_received_by_name, employee.name);
+      assert.strictEqual(counterRegistration.data.reservation.user_id, customer.id);
+      assert.strictEqual(
+        db.prepare('SELECT balance_points FROM loyalty_accounts WHERE user_id = ?').get(customer.id).balance_points,
+        pointsBeforeCounterRegistration + exteriorWash.points_reward,
+        'Os pontos da lavagem registada pelo funcionário devem ser creditados ao cliente identificado pelo telefone.'
+      );
     } finally {
+      if (previousMozaSimulationSetting === undefined) delete process.env.MOZABANCO_SIMULATION_ENABLED;
+      else process.env.MOZABANCO_SIMULATION_ENABLED = previousMozaSimulationSetting;
+      if (previousMozaDiscountSetting === undefined) delete process.env.MOZABANCO_DISCOUNT_ENABLED;
+      else process.env.MOZABANCO_DISCOUNT_ENABLED = previousMozaDiscountSetting;
       db.prepare('UPDATE services SET price_mzn = ? WHERE id = ?').run(fullWash.price_mzn, fullWash.id);
       await new Promise((resolve, reject) => {
         server.close(error => error ? reject(error) : resolve());

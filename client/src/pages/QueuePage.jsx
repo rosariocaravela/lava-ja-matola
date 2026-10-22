@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle2, Clock, Search } from 'lucide-react';
 import { apiRequest } from '../api';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export default function QueuePage() {
+  const { user } = useAuth();
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,6 +39,7 @@ export default function QueuePage() {
            r.reference_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
            r.customer_name.toLowerCase().includes(searchTerm.toLowerCase());
   });
+  const bookingLink = user?.role === 'employee' ? '/funcionario' : '/reservar';
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -56,7 +59,7 @@ export default function QueuePage() {
 
         <div className="flex items-center gap-2">
           <Link
-            to="/reservar"
+            to={bookingLink}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
           >
             Marcar Lavagem

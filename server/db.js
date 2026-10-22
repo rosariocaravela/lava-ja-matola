@@ -23,6 +23,16 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT UNIQUE NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS business_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       name TEXT NOT NULL DEFAULT 'Lava Já Matola - Lavagem rápida e de confiança',
@@ -35,6 +45,9 @@ function initSchema() {
       close_time TEXT NOT NULL DEFAULT '18:00',
       slot_interval_minutes INTEGER NOT NULL DEFAULT 30,
       simultaneous_capacity INTEGER NOT NULL DEFAULT 3,
+      onsite_open_time TEXT NOT NULL DEFAULT '08:00',
+      onsite_close_time TEXT NOT NULL DEFAULT '17:00',
+      onsite_slot_interval_minutes INTEGER NOT NULL DEFAULT 120,
       points_per_mzn REAL NOT NULL DEFAULT 0.1,
       is_demo_mode INTEGER NOT NULL DEFAULT 1,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -66,6 +79,8 @@ function initSchema() {
       duration_minutes INTEGER NOT NULL,
       end_time TEXT NOT NULL,       -- HH:MM
       bay_number INTEGER DEFAULT 1,
+      booking_type TEXT NOT NULL DEFAULT 'shop' CHECK(booking_type IN ('shop', 'onsite')),
+      location_address TEXT,
       status TEXT CHECK(status IN ('reservado', 'aguardando', 'em_atendimento', 'concluido', 'cancelado')) NOT NULL DEFAULT 'reservado',
       notes TEXT,
       points_awarded INTEGER NOT NULL DEFAULT 0,
@@ -85,6 +100,30 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
       FOREIGN KEY (changed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reservation_id INTEGER NOT NULL UNIQUE,
+      user_id INTEGER NOT NULL,
+      rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+      comment TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS site_photos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      alt_text TEXT NOT NULL,
+      is_published INTEGER NOT NULL DEFAULT 0 CHECK(is_published IN (0, 1)),
+      authorized_for_publication INTEGER NOT NULL DEFAULT 0 CHECK(authorized_for_publication IN (0, 1)),
+      uploaded_by_user_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      published_at DATETIME,
+      FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS loyalty_accounts (
@@ -146,9 +185,11 @@ function initSchema() {
       promotion_discount_mzn REAL NOT NULL DEFAULT 0 CHECK(promotion_discount_mzn >= 0),
       reward_code TEXT,
       reward_discount_mzn REAL NOT NULL DEFAULT 0 CHECK(reward_discount_mzn >= 0),
+      mozabanco_discount_mzn REAL NOT NULL DEFAULT 0 CHECK(mozabanco_discount_mzn >= 0),
       reward_title TEXT,
       reward_description TEXT,
       reward_service_name TEXT,
+      benefit_source TEXT NOT NULL DEFAULT 'passaporte' CHECK(benefit_source IN ('passaporte', 'moza')),
       total_discount_mzn REAL NOT NULL DEFAULT 0 CHECK(total_discount_mzn >= 0),
       amount_paid_mzn REAL NOT NULL DEFAULT 0 CHECK(amount_paid_mzn >= 0),
       method TEXT CHECK(method IN ('mpesa', 'emola', 'mkesh', 'mozabanco', 'balcao')),
@@ -158,6 +199,52 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       paid_at DATETIME,
       FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS moza_benefit_cycles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      cycle_number INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('in_progress', 'unlocked', 'used', 'expired')),
+      redemption_code TEXT UNIQUE,
+      unlocked_at DATETIME,
+      expires_at DATETIME,
+      used_at DATETIME,
+      used_reservation_id INTEGER,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, cycle_number),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (used_reservation_id) REFERENCES reservations(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS moza_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      cycle_id INTEGER NOT NULL,
+      provider_transaction_id TEXT NOT NULL UNIQUE,
+      amount_mzn REAL NOT NULL CHECK(amount_mzn > 0),
+      currency TEXT NOT NULL CHECK(currency = 'MZN'),
+      status TEXT NOT NULL CHECK(status IN ('confirmed', 'cancelled', 'reversed')),
+      occurred_at DATETIME NOT NULL,
+      source TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (cycle_id) REFERENCES moza_benefit_cycles(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_moza_transactions_cycle_status
+      ON moza_transactions(cycle_id, status);
+
+    CREATE TABLE IF NOT EXISTS moza_transaction_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id TEXT NOT NULL UNIQUE,
+      provider_transaction_id TEXT NOT NULL,
+      previous_status TEXT,
+      new_status TEXT NOT NULL CHECK(new_status IN ('confirmed', 'cancelled', 'reversed')),
+      payload_hash TEXT NOT NULL,
+      received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS promotions (
@@ -206,8 +293,15 @@ function initSchema() {
   ensureColumn('users', 'auth_version', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn('rewards', 'benefit_type', "TEXT NOT NULL DEFAULT 'discount' CHECK(benefit_type IN ('discount', 'service'))");
   ensureColumn('reward_redemptions', 'expires_at', 'DATETIME');
+  ensureColumn('reservation_payments', 'mozabanco_discount_mzn', 'REAL NOT NULL DEFAULT 0 CHECK(mozabanco_discount_mzn >= 0)');
+  ensureColumn('reservation_payments', 'benefit_source', "TEXT NOT NULL DEFAULT 'passaporte' CHECK(benefit_source IN ('passaporte', 'moza'))");
   ensureColumn('reservations', 'vehicle_received_at', 'DATETIME');
   ensureColumn('reservations', 'vehicle_received_by_user_id', 'INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  ensureColumn('reservations', 'booking_type', "TEXT NOT NULL DEFAULT 'shop' CHECK(booking_type IN ('shop', 'onsite'))");
+  ensureColumn('reservations', 'location_address', 'TEXT');
+  ensureColumn('business_settings', 'onsite_open_time', "TEXT NOT NULL DEFAULT '08:00'");
+  ensureColumn('business_settings', 'onsite_close_time', "TEXT NOT NULL DEFAULT '17:00'");
+  ensureColumn('business_settings', 'onsite_slot_interval_minutes', 'INTEGER NOT NULL DEFAULT 120');
 
   db.prepare(`
     UPDATE rewards

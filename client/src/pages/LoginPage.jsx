@@ -177,6 +177,13 @@ export default function LoginPage() {
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
+                  {!isRegister && (
+                    <div className="mt-2 text-right">
+                      <Link to="/recuperar-senha" className="text-xs font-bold text-blue-700 hover:text-blue-900">
+                        Esqueceu a palavra-passe?
+                      </Link>
+                    </div>
+                  )}
                 </div>
 
                 {isRegister && (

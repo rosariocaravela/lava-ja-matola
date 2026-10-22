@@ -1,3 +1,5 @@
+const { getMozaBenefitsConfig } = require('../config/moza-benefits');
+
 class BillingError extends Error {
   constructor(message, statusCode = 400) {
     super(message);
@@ -64,31 +66,52 @@ function getRewardVoucher(db, reservation, code) {
     WHERE UPPER(rr.redemption_code) = ?
   `).get(String(code).trim().toUpperCase());
 
-  if (!voucher) {
-    throw new BillingError('Código de voucher ou recompensa não encontrado.');
-  }
-  if (!reservation.user_id || voucher.user_id !== reservation.user_id) {
+  const mozaBenefit = voucher ? null : db.prepare(`
+    SELECT id, user_id, status, expires_at, redemption_code
+    FROM moza_benefit_cycles
+    WHERE UPPER(redemption_code) = ?
+  `).get(String(code).trim().toUpperCase());
+  const selectedVoucher = voucher || (mozaBenefit ? {
+    ...mozaBenefit,
+    reward_id: null,
+    title: 'Benefício Moza Banco',
+    description: 'Desconto do programa Lava Já Matola × Moza Banco',
+    discount_mzn: 0,
+    benefit_type: 'percentage',
+    benefit_percentage: getMozaBenefitsConfig().discountPercentage,
+    benefit_source: 'moza',
+    reward_service_id: null,
+    is_active: 1,
+    reward_service_name: null
+  } : null);
+
+  if (!selectedVoucher) throw new BillingError('Código de voucher ou recompensa não encontrado.');
+  if (!selectedVoucher.user_id || selectedVoucher.user_id !== reservation.user_id) {
     throw new BillingError('Este voucher não pertence ao cliente desta marcação.');
   }
-  if (voucher.status !== 'disponivel') {
-    throw new BillingError(voucher.status === 'expirado'
-      ? 'Este voucher expirou.'
-      : 'Este voucher já foi utilizado.');
+  if (selectedVoucher.status !== 'disponivel' && selectedVoucher.status !== 'unlocked') {
+    if (selectedVoucher.status === 'expirado' || selectedVoucher.status === 'expired') {
+      throw new BillingError('Este benefício expirou.', 409);
+    }
+    throw new BillingError('Este benefício já foi utilizado.', 409);
   }
-  if (voucher.expires_at && new Date(voucher.expires_at) < new Date()) {
-    throw new BillingError('Este voucher expirou.');
+  if (selectedVoucher.expires_at && new Date(selectedVoucher.expires_at) < new Date()) {
+    throw new BillingError('Este benefício expirou.');
   }
-  if (!voucher.is_active) {
+  if (!selectedVoucher.is_active) {
     throw new BillingError('A recompensa associada a este voucher está inativa.');
   }
-  if (voucher.reward_service_id && voucher.reward_service_id !== reservation.service_id) {
-    throw new BillingError(`Este benefício só pode ser utilizado no serviço ${voucher.reward_service_name}.`);
+  if (selectedVoucher.reward_service_id && selectedVoucher.reward_service_id !== reservation.service_id) {
+    throw new BillingError(`Este benefício só pode ser utilizado no serviço ${selectedVoucher.reward_service_name}.`);
   }
 
-  return voucher;
+  return {
+    ...selectedVoucher,
+    benefit_source: selectedVoucher.benefit_source || 'passaporte'
+  };
 }
 
-function calculatePayment(originalAmount, promotionDiscount, voucher) {
+function calculatePayment(originalAmount, promotionDiscount, voucher, options = {}) {
   const original = Math.max(0, roundMzn(originalAmount));
   const promo = Math.max(0, Math.min(original, roundMzn(promotionDiscount || 0)));
   let rewardDiscount = 0;
@@ -100,20 +123,37 @@ function calculatePayment(originalAmount, promotionDiscount, voucher) {
     );
   } else if (voucher?.benefit_type === 'service' && voucher.reward_service_id) {
     rewardDiscount = roundMzn(original - promo);
+  } else if (voucher?.benefit_type === 'percentage') {
+    rewardDiscount = Math.min(
+      roundMzn(original - promo),
+      roundMzn((original - promo) * Number(voucher.benefit_percentage) / 100)
+    );
   }
 
-  const totalDiscount = Math.min(original, roundMzn(promo + rewardDiscount));
+  const mozabancoDiscountEnabled = Boolean(options.mozabancoDiscountEnabled);
+  const mozabancoDiscountPercentage = Number(options.mozabancoDiscountPercentage || 10);
+  const eligibleAmount = Math.max(0, roundMzn(original - promo - rewardDiscount));
+  const mozabancoDiscount = options.method === 'mozabanco' && mozabancoDiscountEnabled
+    ? Math.min(eligibleAmount, roundMzn(eligibleAmount * mozabancoDiscountPercentage / 100))
+    : 0;
+  const totalDiscount = Math.min(original, roundMzn(promo + rewardDiscount + mozabancoDiscount));
   return {
     original_amount_mzn: original,
     promotion_discount_mzn: promo,
     reward_discount_mzn: rewardDiscount,
+    mozabanco_discount_mzn: mozabancoDiscount,
+    mozabanco_discount_percentage: options.method === 'mozabanco' && mozabancoDiscountEnabled
+      ? mozabancoDiscountPercentage
+      : 0,
     total_discount_mzn: totalDiscount,
     amount_due_mzn: Math.max(0, roundMzn(original - totalDiscount)),
     reward_code: voucher?.redemption_code || null,
     reward_title: voucher?.title || null,
     reward_description: voucher?.description || null,
     reward_service_name: voucher?.reward_service_name || null,
-    voucher_redemption_id: voucher?.id || null
+    voucher_redemption_id: voucher?.benefit_source === 'moza' ? null : voucher?.id || null,
+    voucher_source: voucher?.benefit_source || null,
+    moza_benefit_cycle_id: voucher?.benefit_source === 'moza' ? voucher.id : null
   };
 }
 

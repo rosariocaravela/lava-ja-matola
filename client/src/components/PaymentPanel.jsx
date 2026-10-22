@@ -32,6 +32,7 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
   const [appliedCode, setAppliedCode] = useState('');
   const [method, setMethod] = useState('mpesa');
   const [loading, setLoading] = useState(true);
+  const [previewing, setPreviewing] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -54,21 +55,26 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
     };
   }, [reservationId]);
 
-  async function previewVoucher(code) {
+  async function previewVoucher(code, paymentMethod = method) {
+    setPreviewing(true);
     setError('');
     setMessage('');
     try {
       const data = await apiRequest(`/payments/${reservationId}/preview-voucher`, {
         method: 'POST',
-        body: JSON.stringify({ code })
+        body: JSON.stringify({ code, method: paymentMethod })
       });
       setSummary(data);
-      setAppliedCode(code);
-      setMessage(code
-        ? 'Voucher validado. O desconto será aplicado ao confirmar o pagamento.'
-        : 'Voucher removido. A promoção da marcação continua aplicada, se existir.');
+      if (code !== appliedCode) {
+        setAppliedCode(code);
+        setMessage(code
+          ? 'Voucher validado. O desconto será aplicado ao confirmar o pagamento.'
+          : 'Voucher removido. A promoção da marcação continua aplicada, se existir.');
+      }
     } catch (err) {
       setError(err.message);
+    } finally {
+      setPreviewing(false);
     }
   }
 
@@ -108,7 +114,10 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
         ? `<div class="row discount"><span>Promoção ${escapeHtml(payment.promotion_code ? `(${payment.promotion_code})` : '')}</span><strong>−${escapeHtml(formatMoney(payment.promotion_discount_mzn))}</strong></div>`
         : '',
       payment.reward_discount_mzn > 0
-        ? `<div class="row discount"><span>Desconto do Passaporte${payment.reward_title ? ` (${escapeHtml(payment.reward_title)})` : ''}</span><strong>−${escapeHtml(formatMoney(payment.reward_discount_mzn))}</strong></div>`
+        ? `<div class="row discount"><span>${payment.benefit_source === 'moza' ? 'Benefício Lava Já × Moza Banco' : `Desconto do Passaporte${payment.reward_title ? ` (${escapeHtml(payment.reward_title)})` : ''}`}</span><strong>−${escapeHtml(formatMoney(payment.reward_discount_mzn))}</strong></div>`
+        : '',
+      payment.mozabanco_discount_mzn > 0
+        ? `<div class="row discount"><span>Desconto Moza Banco (${escapeHtml(payment.mozabanco_discount_percentage || 10)}%)</span><strong>−${escapeHtml(formatMoney(payment.mozabanco_discount_mzn))}</strong></div>`
         : '',
       `<div class="row total"><span>Total pago</span><strong>${escapeHtml(formatMoney(payment.amount_paid_mzn))}</strong></div>`
     ].join('');
@@ -173,17 +182,20 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="presentation">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:items-center sm:p-4" role="presentation">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-dialog-title"
-        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl sm:p-7"
+        className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/70 bg-white p-5 shadow-2xl sm:max-h-[90dvh] sm:p-7"
       >
-        <div className="flex items-start justify-between gap-4">
+        <div className="sticky -top-5 z-10 -mx-5 -mt-5 mb-5 flex items-start justify-between gap-4 border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur sm:-top-7 sm:-mx-7 sm:-mt-7 sm:px-7 sm:py-5">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-blue-600">Lava Já Matola</span>
-            <h2 id="payment-dialog-title" className="mt-1 text-xl font-black text-slate-900">
+            <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-blue-700">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Lava Já Matola
+            </span>
+            <h2 id="payment-dialog-title" className="mt-2 text-xl font-black text-slate-900 sm:text-2xl">
               {isPaid ? 'Comprovativo de pagamento' : 'Resumo do pagamento'}
             </h2>
           </div>
@@ -200,12 +212,12 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
           <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
         ) : (
           <>
-            <div className="mt-5 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-4 text-xs">
-              <div><span className="block text-slate-500">Referência</span><strong className="font-mono text-slate-900">{reservation.reference_code}</strong></div>
-              <div><span className="block text-slate-500">Estado do serviço</span><strong className="text-slate-900">{reservation.service_status.replace('_', ' ')}</strong></div>
-              <div><span className="block text-slate-500">Cliente</span><strong className="text-slate-900">{reservation.customer_name}</strong></div>
-              <div><span className="block text-slate-500">Matrícula</span><strong className="font-mono text-slate-900">{reservation.vehicle_plate}</strong></div>
-              <div className="col-span-2"><span className="block text-slate-500">Serviço</span><strong className="text-slate-900">{reservation.service_name}</strong></div>
+            <div className="mt-5 grid grid-cols-1 gap-3 rounded-2xl bg-gradient-to-br from-slate-900 to-blue-950 p-4 text-xs text-white sm:grid-cols-2 sm:p-5">
+              <div><span className="block text-blue-200">Referência</span><strong className="font-mono tracking-wide">{reservation.reference_code}</strong></div>
+              <div><span className="block text-blue-200">Estado do serviço</span><strong className="capitalize">{reservation.service_status.replaceAll('_', ' ')}</strong></div>
+              <div><span className="block text-blue-200">Cliente</span><strong>{reservation.customer_name}</strong></div>
+              <div><span className="block text-blue-200">Matrícula</span><strong className="font-mono">{reservation.vehicle_plate}</strong></div>
+              <div className="sm:col-span-2"><span className="block text-blue-200">Serviço</span><strong>{reservation.service_name}</strong></div>
             </div>
 
             <div className="mt-5 space-y-3 rounded-2xl border border-slate-200 p-4 text-sm">
@@ -220,8 +232,14 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
               )}
               {payment.reward_discount_mzn > 0 && (
                 <div className="flex justify-between gap-4 text-emerald-700">
-                  <span>Desconto do Passaporte ({payment.reward_title})</span>
+                  <span>{payment.benefit_source === 'moza' ? 'Benefício Lava Já × Moza Banco' : `Desconto do Passaporte (${payment.reward_title})`}</span>
                   <span>−{formatMoney(payment.reward_discount_mzn)}</span>
+                </div>
+              )}
+              {payment.mozabanco_discount_mzn > 0 && (
+                <div className="flex justify-between gap-4 text-emerald-700">
+                  <span>Desconto Moza Banco ({payment.mozabanco_discount_percentage || 10}%)</span>
+                  <span>−{formatMoney(payment.mozabanco_discount_mzn)}</span>
                 </div>
               )}
               {payment.reward_title && payment.reward_service_name && (
@@ -304,27 +322,49 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
                     </div>
 
                     <div className="mt-5">
-                      <h3 className="text-xs font-bold text-slate-800">Método de pagamento</h3>
+                      <h3 className="text-sm font-black text-slate-900">Escolha como pretende pagar</h3>
+                      <p className="mt-1 text-xs text-slate-500">M-Pesa e e-Mola estão disponíveis em modo demonstrativo, sem movimentar dinheiro.</p>
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         {PAYMENT_METHODS.filter(option => option.id !== 'balcao' || isStaff).map(option => {
                           const Icon = option.icon;
                           const selected = method === option.id;
+                          const mozaUnavailable = option.id === 'mozabanco' && !payment.mozabanco_simulation_enabled;
                           return (
                             <button
                               key={option.id}
                               type="button"
                               aria-pressed={selected}
-                              onClick={() => setMethod(option.id)}
-                              className={`flex items-center gap-2 rounded-xl border p-3 text-left text-xs ${
-                                selected ? 'border-blue-600 bg-blue-50 text-blue-950' : 'border-slate-200 text-slate-700'
-                              }`}
+                              disabled={mozaUnavailable}
+                              onClick={() => {
+                                setMethod(option.id);
+                                previewVoucher(appliedCode, option.id);
+                              }}
+                              className={`flex min-h-14 items-center gap-2 rounded-xl border p-3 text-left text-xs transition ${
+                                selected ? 'border-blue-600 bg-blue-50 text-blue-950 ring-2 ring-blue-100' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-slate-50'
+                              } disabled:cursor-not-allowed disabled:opacity-50`}
                             >
                               <Icon className="h-4 w-4 shrink-0" />
-                              <span className="font-bold">{option.label}</span>
+                              <span className="font-bold">
+                                {option.label}
+                                {option.id === 'mozabanco' && payment.mozabanco_discount_enabled && (
+                                  <span className="ml-1 text-emerald-700">−10%</span>
+                                )}
+                                {mozaUnavailable && <span className="block font-normal text-slate-500">aguarda integração oficial e autorização</span>}
+                              </span>
                             </button>
                           );
                         })}
                       </div>
+                      {method === 'mozabanco' && payment.mozabanco_discount_enabled && payment.mozabanco_discount_mzn > 0 && (
+                        <p className="mt-2 text-xs font-semibold text-emerald-800">
+                          Desconto de 10% aplicado ao valor restante após promoção e voucher: −{formatMoney(payment.mozabanco_discount_mzn)}.
+                        </p>
+                      )}
+                      {method === 'mozabanco' && payment.mozabanco_simulation_enabled && !payment.mozabanco_discount_enabled && (
+                        <p className="mt-2 text-[11px] text-amber-800">
+                          Simulação sem desconto: o benefício de 10% está desligado até confirmação da autorização comercial.
+                        </p>
+                      )}
                       {selectedMethod.simulated ? (
                         <p className="mt-2 text-[11px] leading-relaxed text-amber-800">
                           Simulação demonstrativa: não contacta o fornecedor nem movimenta dinheiro. Não introduza PIN ou palavra-passe.
@@ -341,11 +381,11 @@ export default function PaymentPanel({ reservationId, userRole, onClose, onPaid 
                     )}
                     <button
                       type="button"
-                      disabled={processing}
+                      disabled={processing || previewing}
                       onClick={handleConfirm}
                       className="mt-5 w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"
                     >
-                      {processing ? 'A registar...' : method === 'balcao' ? 'Confirmar valor recebido no balcão' : 'Confirmar pagamento demonstrativo'}
+                      {previewing ? 'A actualizar o valor...' : processing ? 'A registar...' : method === 'balcao' ? 'Confirmar valor recebido no balcão' : 'Confirmar pagamento demonstrativo'}
                     </button>
                   </>
                 )}

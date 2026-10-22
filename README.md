@@ -29,13 +29,13 @@ O catálogo inicial apresenta serviços com nomes simples e descrições diretas
 
 ### Fluxo de agendamento
 
-O agendamento é apresentado em duas etapas. Na primeira, o cliente escolhe o serviço, a data e um horário disponível; o botão **«Avançar»** só fica ativo depois de selecionar serviço e horário. Cada horário de início aceita uma única reserva: depois de reservado, deixa de estar disponível para os outros clientes. Outros horários próximos continuam sujeitos à capacidade das vagas, que o servidor volta a validar no momento da confirmação. A página atualiza a disponibilidade a cada 15 segundos e quando volta a ficar ativa. A barra de progresso indica 50% nesta etapa e 100% na etapa seguinte. Na segunda, o cliente preenche os dados da viatura e contacto, pode aplicar um código promocional e confirma a reserva. É possível voltar para alterar o serviço ou horário.
+O agendamento é apresentado em duas etapas. Na primeira, o cliente escolhe a modalidade — **nas instalações Lava Já** ou **no local indicado pelo cliente** —, o serviço, a data e um horário disponível. As modalidades têm disponibilidade independente: a primeira respeita as vagas e o horário do estabelecimento; a segunda agenda uma equipa móvel, usa um horário de atendimento próprio e exige o endereço de destino. Só é permitido um atendimento móvel de cada vez. O administrador configura o início e o fim do atendimento móvel nas configurações do estabelecimento. As condições de água e energia ainda não fazem parte desta versão. O botão **«Avançar»** só fica ativo depois de selecionar serviço e horário. A página atualiza a disponibilidade a cada 15 segundos e quando volta a ficar ativa; o servidor valida novamente a disponibilidade ao confirmar. Na segunda etapa, o cliente preenche os dados da viatura e contacto, pode aplicar um código promocional e confirma a marcação. É possível voltar para alterar serviço, modalidade ou horário.
 
-O agendamento feito pelo cliente confirma a entrada na fila, mas não comprova que a viatura já foi entregue. Quando o cliente chega ao estabelecimento, um funcionário ou administrador confirma a receção no painel operacional. A confirmação identifica a conta e a hora, coloca a viatura em espera e disponibiliza ao cliente um comprovativo descarregável; o ficheiro também permite imprimir ou guardar como PDF. Este documento comprova apenas a receção, não o pagamento nem a conclusão da lavagem.
+Uma marcação nas instalações não comprova que a viatura já foi entregue. Quando o cliente chega ao estabelecimento, um funcionário ou administrador confirma a receção no painel operacional. A confirmação identifica a conta e a hora, coloca a viatura em espera e disponibiliza ao cliente um comprovativo descarregável. Na modalidade no local, não há receção da viatura no balcão; o endereço informado fica visível no painel operacional. O comprovativo de marcação não comprova pagamento nem conclusão da lavagem.
 
 ### Partilha do Lava Já
 
-O botão **«Partilhar o Lava Já»**, disponível na página inicial e junto às lavagens concluídas no painel do cliente, usa o menu de partilha do dispositivo quando disponível. Caso contrário, oferece atalhos para WhatsApp, Facebook e Telegram, além de copiar o endereço do site. Em desenvolvimento local, o endereço `localhost` só funciona no computador que está a executar a aplicação; para os clientes acederem, partilhe o endereço público do ngrok ou configure um domínio.
+O botão **«Partilhar o Lava Já»**, disponível na página inicial, usa o menu de partilha do dispositivo quando disponível. Caso contrário, oferece atalhos para WhatsApp, Facebook e Telegram, além de copiar o endereço do site. Em desenvolvimento local, o endereço `localhost` só funciona no computador que está a executar a aplicação; para os clientes acederem, partilhe o endereço público do ngrok ou configure um domínio.
 
 ---
 
@@ -46,6 +46,10 @@ Os utilizadores iniciam sessão individualmente em `/login` com o endereço de e
 As contas e os respetivos dados permanecem na base de dados atual. As palavras-passe não são documentadas nem incluídas no código: configure-as por um processo administrativo seguro e utilize palavras-passe únicas antes de colocar o sistema em produção. As credenciais antigas de desenvolvimento não devem ser reutilizadas em produção.
 
 O segredo JWT deve ser definido em `server/.env` com um valor aleatório único de, pelo menos, 32 caracteres. Não reutilize o valor de exemplo. A alteração do segredo invalida as sessões JWT existentes.
+
+A recuperação da palavra-passe envia um link de utilização única, válido por 30 minutos. Para a activar, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` e `CLIENT_PUBLIC_URL` em `server/.env`, usando credenciais SMTP próprias e uma URL pública HTTPS em produção. Sem SMTP configurado, o pedido de recuperação apresenta uma mensagem de indisponibilidade e não envia email.
+
+O projecto não contém uma integração oficial com o Moza Banco. `MOZABANCO_SIMULATION_ENABLED` e `MOZABANCO_DISCOUNT_ENABLED` ficam desativados por predefinição. Só os active para testes demonstrativos; o desconto de 10% só deve ser activado após autorização comercial e não representa uma transacção bancária real.
 
 ---
 
@@ -142,7 +146,19 @@ Os testes usam uma base SQLite temporária isolada, criada e reposta pelo runner
 3. Depois da conclusão, o cliente ou funcionário abre **«Proceder ao Pagamento»**. O preço cobrado é o preço guardado quando a marcação foi criada, mesmo que o catálogo seja alterado depois.
 4. Promoções válidas para a data do serviço ficam registadas na marcação. Um voucher do Passaporte pode acumular com essa promoção; o backend valida o titular, a validade, o estado e o serviço aplicável, limita o desconto ao preço e só consome o voucher na mesma transação em que confirma o pagamento.
 5. As recompensas de serviço (por exemplo, cera ou ambientador) aparecem como benefícios separados; não são confundidas com pontos convertidos em dinheiro. Uma recompensa de serviço associada a uma lavagem gratuita aplica-se apenas ao serviço correspondente.
-6. M-Pesa, e-Mola, mKesh e Moza Banco são **simulações sem integração financeira**. O pagamento no balcão só pode ser confirmado por funcionário ou administrador, depois de receber o valor. O comprovativo distingue pagamentos simulados dos recebimentos no balcão.
+6. M-Pesa, e-Mola e mKesh são **simulações sem integração financeira**. Moza Banco fica indisponível por predefinição; em modo de teste, a simulação pode calcular 10% sobre o valor restante após promoção e voucher, sem contactar o banco nem movimentar dinheiro. O desconto é controlado pelas variáveis `MOZABANCO_SIMULATION_ENABLED` e `MOZABANCO_DISCOUNT_ENABLED` e deve permanecer desligado até à integração oficial e à autorização comercial. O pagamento no balcão só pode ser confirmado por funcionário ou administrador, depois de receber o valor. O comprovativo distingue pagamentos simulados dos recebimentos no balcão.
+
+### Campanha de benefícios Lava Já Matola × Moza Banco
+
+O painel do cliente apresenta o progresso de transações confirmadas, o benefício disponível e o histórico de utilização. A regra inicial é configurável por `MOZA_BENEFIT_TRANSACTION_TARGET` (5 transações), `MOZA_BENEFIT_DISCOUNT_PERCENTAGE` (10%), `MOZA_BENEFIT_MIN_TRANSACTION_MZN` (valor mínimo elegível) e `MOZA_BENEFIT_VALIDITY_DAYS` (0 significa sem prazo de validade). As transações canceladas ou revertidas deixam de contar antes de o benefício ser usado; se a reversão acontecer depois de o desconto ser consumido, não se recupera retroativamente o desconto aplicado. Depois da utilização inicia-se automaticamente um novo ciclo.
+
+Este repositório não dispõe de API ou confirmação oficial do Moza Banco. Por isso, M-Pesa, e-Mola, mKesh e a opção demonstrativa Moza não contam para a campanha. O frontend não permite inserir transações. O backend só aceita eventos no endpoint interno `/api/loyalty/moza/transaction-events` quando `MOZA_TRANSACTION_WEBHOOK_SECRET` está configurado com pelo menos 32 bytes e o pedido tem `X-Moza-Timestamp` (Unix em segundos) e `X-Moza-Signature` (HMAC-SHA256 hexadecimal sobre `timestamp + "." + JSON.stringify(body)`). A janela de timestamp aceite é de cinco minutos. O adaptador futuro deve validar a confirmação oficial, associar o identificador interno do cliente sem expor o PAN/cartão, enviar um `event_id` e `provider_transaction_id` estáveis, e retransmitir cancelamentos/reversões com nova identificação de evento. A aplicação protege repetição pelo identificador do evento e pela referência única de transação, e regista auditoria.
+
+Não configure este segredo até existir um canal autorizado e seguro com o banco. A configuração do segredo, por si só, não representa uma integração nem autorização comercial. Um benefício real pode ser reclamado pelo cliente e aplicado uma vez numa lavagem; enquanto pagamentos digitais forem demonstrativos, a confirmação do desconto Moza exige registo de pagamento real no balcão por funcionário autorizado. Não são solicitados nem armazenados número completo de cartão, CVV, PIN ou palavra-passe bancária. O ficheiro `credit-card-form.tsx` referido como referência visual não existe neste repositório; a experiência visual usa o `PaymentPanel.jsx` existente.
+
+## Publicação de fotografias
+
+O gestor pode carregar fotografias no separador **Fotografias** do painel administrativo. São aceites imagens JPEG, PNG e WebP até 5 MB; cada fotografia precisa de título, descrição alternativa e confirmação de autorização para a divulgação pública, incluindo consentimento das pessoas ou matrículas identificáveis. As imagens carregadas permanecem privadas até o gestor as aprovar; podem ser retiradas do site ou removidas. O site público mostra apenas fotografias aprovadas. Os ficheiros ficam em `server/uploads/gallery` por predefinição; inclua essa pasta nas cópias de segurança e use armazenamento persistente no ambiente de produção.
 
 ## 7. Assistente de Inteligência Artificial — Modos de Funcionamento
 
@@ -172,8 +188,8 @@ O assistente foi projectado para operar em dois modos:
 | **Autenticação & JWT** | **REAL** | Tokens criptografados, verificação de cabeçalho `Authorization: Bearer`. |
 | **Assistente Conversacional**| **REAL** | Processamento de intenções via `/api/ai-assistant/chat` apoiado na base de dados. |
 | **Notificações** | **SIMULADA (Interna)**| Sistema de notificações interno com central e badges (sem envio de SMS/WhatsApp externo para não gerar custos). |
-| **Google Maps** | **REAL** | Links e pesquisa direta com coordenadas GPS da Matola. |
-| **Pagamentos eletrónicos** | **SIMULADOS (sem cobrança)** | Após a lavagem concluída, M-Pesa, e-Mola, mKesh e Moza Banco geram um comprovativo demonstrativo local. Nenhum fornecedor é contactado nem dinheiro movimentado. |
+| **Localização por GPS** | **REAL (uma unidade)** | Com autorização do navegador, calcula a distância em linha reta até à unidade configurada e abre a rota de condução no Google Maps. Requer HTTPS em produção; a aplicação ainda não mantém uma lista de sucursais para encontrar a mais próxima entre várias unidades. |
+| **Pagamentos eletrónicos** | **SIMULADOS (sem cobrança)** | Após a lavagem concluída, M-Pesa, e-Mola e mKesh podem gerar um comprovativo demonstrativo local. Moza Banco e o seu desconto ficam desligados por predefinição; a simulação Moza só pode ser activada para testes e não contacta o banco nem movimenta dinheiro. |
 | **Pagamento no balcão** | **Registo interno** | Funcionário ou administrador autorizado regista o valor recebido presencialmente e emite um comprovativo. |
 | **Vouchers do Passaporte VIP** | **REAL (na aplicação)** | Resgates deduzem pontos, geram um código de utilização única e só são consumidos atomicamente quando o pagamento associado é confirmado. |
 
@@ -184,7 +200,7 @@ O assistente foi projectado para operar em dois modos:
 ### Passo 1: Captação de Clientes (Página Inicial Pública)
 1. Mostre a **Página Inicial**: design moderno, cores do sector automóvel, tabela de serviços e preços em Meticais (MT).
 2. Mostre o banner de campanhas ativas e a capacidade de atendimento simultâneo configurada para o estabelecimento.
-3. Clique em **«Como Chegar»** para abrir a rota no Google Maps.
+3. Clique em **«Calcular distância com GPS»** e permita a localização no navegador para ver a distância aproximada até à unidade configurada; depois abra a rota no Google Maps. A distância apresentada é em linha reta. Em produção, a localização do navegador exige HTTPS. Como só há uma unidade cadastrada, ainda não é possível comparar várias sucursais.
 
 ### Passo 2: O Assistente Lava Já Matola
 1. Clique no botão flutuante **«Assistente Lava Já Matola»** no canto inferior direito.

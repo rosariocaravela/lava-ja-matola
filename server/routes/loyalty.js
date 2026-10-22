@@ -1,10 +1,104 @@
 const express = require('express');
+const crypto = require('crypto');
 const db = require('../db');
 const { MINIMUM_REWARD_POINTS } = require('../config/loyalty');
+const { getMozaBenefits, recordTransactionEvent, claimMozaBenefit } = require('../services/mozaBenefits');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { awardRecurringBonusIfDue } = require('../utils/loyalty');
 
 const router = express.Router();
+
+router.get('/moza-benefits', authenticateToken, requireRole(['customer']), (req, res) => {
+  try {
+    return res.json(getMozaBenefits(req.user.id));
+  } catch (error) {
+    console.error('Erro ao consultar benefícios Moza:', error);
+    return res.status(500).json({ error: 'Erro ao carregar os benefícios Moza.' });
+  }
+});
+
+router.post('/moza-benefits/claim', authenticateToken, requireRole(['customer']), (req, res) => {
+  try {
+    const benefit = claimMozaBenefit(req.user.id);
+    return res.json({
+      message: 'Desconto desbloqueado. Apresente este código ao funcionário no pagamento.',
+      benefit
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ error: error.message || 'Erro ao disponibilizar o benefício.' });
+  }
+});
+
+router.post('/moza/transaction-events', (req, res) => {
+  const secret = process.env.MOZA_TRANSACTION_WEBHOOK_SECRET;
+  if (!secret) {
+    return res.status(503).json({ error: 'A receção de transações Moza aguarda configuração de uma integração autorizada.' });
+  }
+  if (Buffer.byteLength(secret, 'utf8') < 32) {
+    return res.status(503).json({ error: 'O segredo da integração Moza deve ter pelo menos 32 bytes.' });
+  }
+
+  const timestamp = req.get('x-moza-timestamp') || '';
+  const signature = req.get('x-moza-signature') || '';
+  const timestampSeconds = Number(timestamp);
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return res.status(400).json({ error: 'O corpo do evento deve ser um objeto JSON.' });
+  }
+  if (!Number.isInteger(timestampSeconds) || Math.abs(Date.now() / 1000 - timestampSeconds) > 300) {
+    return res.status(401).json({ error: 'Assinatura expirada ou carimbo temporal inválido.' });
+  }
+  if (typeof signature !== 'string' || !/^[a-f0-9]{64}$/i.test(signature)) {
+    return res.status(401).json({ error: 'Assinatura de origem inválida.' });
+  }
+
+  const serializedBody = JSON.stringify(body);
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(`${timestamp}.${serializedBody}`)
+    .digest();
+  const providedSignature = Buffer.from(signature, 'hex');
+  if (providedSignature.length !== expectedSignature.length ||
+      !crypto.timingSafeEqual(providedSignature, expectedSignature)) {
+    return res.status(401).json({ error: 'Assinatura de origem inválida.' });
+  }
+
+  const occurredAt = typeof body?.occurred_at === 'string' ? new Date(body.occurred_at) : null;
+  const amount = Number(body?.amount_mzn);
+  if (
+    !body ||
+    typeof body.event_id !== 'string' || !body.event_id.trim() || body.event_id.length > 128 ||
+    typeof body.provider_transaction_id !== 'string' || !body.provider_transaction_id.trim() || body.provider_transaction_id.length > 128 ||
+    !Number.isInteger(Number(body.user_id)) || Number(body.user_id) <= 0 ||
+    !Number.isFinite(amount) || amount <= 0 || amount > 10000000 ||
+    body.currency !== 'MZN' ||
+    !['confirmed', 'cancelled', 'reversed'].includes(body.status) ||
+    !occurredAt || Number.isNaN(occurredAt.getTime())
+  ) {
+    return res.status(400).json({ error: 'Evento de transação Moza inválido ou incompleto.' });
+  }
+
+  try {
+    const result = recordTransactionEvent({
+      event_id: body.event_id.trim(),
+      provider_transaction_id: body.provider_transaction_id.trim(),
+      user_id: Number(body.user_id),
+      amount_mzn: amount,
+      currency: body.currency,
+      status: body.status,
+      occurred_at: occurredAt.toISOString().replace('T', ' ').slice(0, 19)
+    }, crypto.createHash('sha256').update(serializedBody).digest('hex'));
+
+    return res.status(result.duplicate ? 200 : 202).json({
+      message: result.duplicate ? 'Evento já recebido; nenhuma alteração duplicada foi aplicada.' : 'Evento registado.',
+      ...result
+    });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    console.error('Erro ao registar evento da integração Moza:', error);
+    return res.status(500).json({ error: 'Erro ao registar o evento da transação.' });
+  }
+});
 
 function generateRedemptionCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

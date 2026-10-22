@@ -2,6 +2,13 @@ import React from 'react';
 import { Car, MapPin, Phone, Mail, Clock, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+const socialNetworks = [
+  { name: 'Facebook', image: '/social/facebook.svg', url: 'https://www.facebook.com/share/1c4sZGx9ms/?mibextid=wwXIfr' },
+  { name: 'Instagram', image: '/social/instagram.svg', url: '' },
+  { name: 'YouTube', image: '/social/youtube.svg', url: '' },
+  { name: 'WhatsApp', image: '/social/whatsapp.svg', url: '' }
+];
+
 export default function Footer() {
   return (
     <footer className="bg-slate-950 text-slate-300 border-t border-slate-800 text-base">
@@ -20,6 +27,41 @@ export default function Footer() {
             </p>
             <div className="text-sm text-blue-300 font-medium leading-6">
               Lava Já Matola — Excelência em Limpeza Automóvel
+            </div>
+            <div className="flex items-center gap-3 pt-1" aria-label="Redes sociais do Lava Já">
+              {socialNetworks.map(network => {
+                const icon = (
+                  <img
+                    src={network.image}
+                    alt=""
+                    aria-hidden="true"
+                    className="h-10 w-10 transition-transform group-hover:scale-110"
+                  />
+                );
+
+                return network.url ? (
+                  <a
+                    key={network.name}
+                    href={network.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Lava Já no ${network.name}`}
+                    className="group rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                  >
+                    {icon}
+                  </a>
+                ) : (
+                  <span
+                    key={network.name}
+                    role="img"
+                    aria-label={`${network.name}: perfil ainda não configurado`}
+                    title={`${network.name}: perfil ainda não configurado`}
+                    className="group cursor-default opacity-90"
+                  >
+                    {icon}
+                  </span>
+                );
+              })}
             </div>
           </div>
 

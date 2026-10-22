@@ -260,57 +260,65 @@ export default function LoyaltyPage() {
 
       {/* User's Redeemed Vouchers */}
       {isCustomer && loyaltyData?.redemptions && loyaltyData.redemptions.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-          <div className="flex items-center gap-2">
-            <TicketCheck className="h-4 w-4 text-emerald-600" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900">
-              Meus Vouchers Resgatados
-            </h2>
+        <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50">
+                <TicketCheck className="h-4 w-4 text-emerald-600" />
+              </span>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Vouchers resgatados</h2>
+                <p className="mt-0.5 text-[11px] text-slate-500">Os seus benefícios por pontos</p>
+              </div>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600">
+              {loyaltyData.redemptions.length}
+            </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {loyaltyData.redemptions.map((red) => (
               <div
                 key={red.id}
-                className={`p-4 rounded-xl border text-xs ${REDEMPTION_STATUS_STYLES[red.status] || REDEMPTION_STATUS_STYLES.utilizado}`}
+                className={`rounded-xl border p-4 ${REDEMPTION_STATUS_STYLES[red.status] || REDEMPTION_STATUS_STYLES.utilizado}`}
               >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-bold text-slate-900">{red.reward_title}</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="text-sm font-bold leading-snug text-slate-900">{red.reward_title}</span>
+                  <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold">
                     {REDEMPTION_STATUS_LABELS[red.status] || red.status}
                   </span>
                 </div>
                 {red.reward_description && (
-                  <p className="text-[11px] leading-relaxed text-slate-600">{red.reward_description}</p>
+                  <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-slate-600">{red.reward_description}</p>
                 )}
-                {red.reward_service_name && (
-                  <div className="mt-2 text-[11px] font-semibold text-blue-800">
-                    Válido para: {red.reward_service_name}
+                {(red.reward_service_name || (red.discount_mzn > 0 && red.benefit_type !== 'service')) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {red.reward_service_name && (
+                      <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-800">
+                        {red.reward_service_name}
+                      </span>
+                    )}
+                    {red.discount_mzn > 0 && red.benefit_type !== 'service' && (
+                      <span className="rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-800">
+                        Até {red.discount_mzn} MT
+                      </span>
+                    )}
                   </div>
                 )}
-                {red.discount_mzn > 0 && (
-                  <div className="mt-2 font-semibold text-emerald-800">
-                    {red.benefit_type === 'service'
-                      ? `Benefício de serviço • referência ${red.discount_mzn} MT`
-                      : `Desconto até ${red.discount_mzn} MT`}
-                  </div>
-                )}
-                <div className="text-lg font-mono font-black text-slate-900 my-1">
-                  {red.redemption_code}
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-white/75 px-3 py-2">
+                  <span className="font-mono text-sm font-black tracking-wide text-slate-900">
+                    {red.redemption_code}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800">
+                    {red.points_spent} pts
+                  </span>
                 </div>
-                <div className="text-[10px] text-slate-500">
-                  {red.points_spent} pontos utilizados
-                </div>
-                <div className="text-[10px] text-slate-500 mt-1">
-                  Resgatado em {new Date(red.created_at).toLocaleDateString('pt-PT')}
-                </div>
-                {red.used_at && (
-                  <div className="text-[10px] text-slate-500">
-                    Utilizado em {new Date(red.used_at).toLocaleDateString('pt-PT')}
-                  </div>
-                )}
+                <p className="mt-2 text-[10px] text-slate-500">
+                  Resgatado {new Date(red.created_at).toLocaleDateString('pt-PT')}
+                  {red.used_at && ` · Utilizado ${new Date(red.used_at).toLocaleDateString('pt-PT')}`}
+                </p>
                 {red.status === 'disponivel' && (
-                  <div className="mt-3 border-t border-current/10 pt-2 text-[10px] font-medium">
-                    Apresente o código no balcão antes de pagar.
+                  <div className="mt-2 rounded-lg bg-emerald-100/70 px-2.5 py-2 text-[10px] font-semibold text-emerald-900">
+                    Apresente este código no balcão.
                   </div>
                 )}
               </div>

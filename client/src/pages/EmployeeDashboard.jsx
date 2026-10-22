@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Car, CheckCircle2, Clock, Search, ShieldCheck, 
-  AlertCircle, Tag, Award, ArrowRight, PlusCircle, Sparkles, ReceiptText, Download, XCircle
+import {
+  CheckCircle2, Search, ReceiptText, Download, XCircle,
+  PlusCircle, AlertCircle
 } from 'lucide-react';
 import { apiRequest } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +15,6 @@ export default function EmployeeDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
 
-  // Quick completed wash registration form
   const [quickPlate, setQuickPlate] = useState('');
   const [quickName, setQuickName] = useState('');
   const [quickPhone, setQuickPhone] = useState('');
@@ -24,7 +23,6 @@ export default function EmployeeDashboard() {
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickSuccess, setQuickSuccess] = useState(null);
   const [quickError, setQuickError] = useState('');
-
   const [paymentReservationId, setPaymentReservationId] = useState(null);
 
   useEffect(() => {
@@ -59,8 +57,8 @@ export default function EmployeeDashboard() {
     }
   }
 
-  async function handleQuickRegister(e) {
-    e.preventDefault();
+  async function handleQuickRegister(event) {
+    event.preventDefault();
     setQuickError('');
     setQuickSuccess(null);
 
@@ -71,7 +69,7 @@ export default function EmployeeDashboard() {
 
     try {
       setQuickLoading(true);
-      const res = await apiRequest('/reservations/register-completed', {
+      const result = await apiRequest('/reservations/register-completed', {
         method: 'POST',
         body: JSON.stringify({
           customer_name: quickName.trim(),
@@ -83,15 +81,15 @@ export default function EmployeeDashboard() {
         })
       });
 
-      setQuickSuccess(res.reservation);
-      setPaymentReservationId(res.reservation.id);
+      setQuickSuccess(result.reservation);
+      setPaymentReservationId(result.reservation.id);
       setQuickPlate('');
       setQuickName('');
       setQuickPhone('');
       setQuickModel('');
-      loadDashboardData();
-    } catch (err) {
-      setQuickError(err.message);
+      await loadDashboardData();
+    } catch (error) {
+      setQuickError(error.message);
     } finally {
       setQuickLoading(false);
     }
@@ -143,7 +141,7 @@ export default function EmployeeDashboard() {
             Operador: {user?.name || 'Funcionário'}
           </h1>
           <p className="text-xs text-slate-300 mt-1">
-            Consulte reservas, registe lavagens e acompanhe o atendimento.
+            Consulte reservas, crie marcações para clientes e acompanhe o atendimento.
           </p>
         </div>
         <nav aria-label="Atalhos do painel operacional" className="flex flex-wrap gap-2">
@@ -162,111 +160,78 @@ export default function EmployeeDashboard() {
         </nav>
       </div>
 
-      {/* Quick Wash Registration Form (Highlight Section) */}
-      <div id="registar-lavagem" className="scroll-mt-24 bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-        <div className="flex items-center gap-2 text-slate-900">
-          <PlusCircle className="w-5 h-5 text-blue-600" />
-          <h2 className="text-base font-black">Registar Lavagem Concluída no Balcão</h2>
-          <span className="text-[11px] bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full font-semibold border border-blue-200">
-            Registo Imediato
+      <section id="registar-lavagem" className="scroll-mt-24 space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-slate-900">
+          <PlusCircle className="h-5 w-5 text-blue-600" />
+          <h2 className="text-base font-black">Registar lavagem concluída no balcão</h2>
+          <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
+            Registo imediato
           </span>
         </div>
-        <p className="text-xs text-slate-500">
-          O veículo terminou de ser lavado? Registe aqui na hora para emitir a referência e atribuir os pontos ao cliente:
+        <p className="text-sm text-slate-600">
+          Use esta opção quando o cliente já trouxe a viatura e a lavagem foi concluída. Se o telefone corresponder a uma conta do cliente, os pontos serão creditados no Passaporte VIP dessa conta.
         </p>
 
         {quickSuccess && (
-          <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex flex-col items-start justify-between gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 sm:flex-row sm:items-center">
             <div className="flex items-center gap-2.5">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-              <div>
-                <strong>Lavagem concluída registada com sucesso!</strong> Ref: <span className="font-mono font-black text-blue-700">{quickSuccess.reference_code}</span> • Viatura: <strong>{quickSuccess.vehicle_plate}</strong> ({quickSuccess.service_name})
-              </div>
+              <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+              <p>
+                <strong>Lavagem concluída!</strong> Ref. <span className="font-mono font-black text-blue-700">{quickSuccess.reference_code}</span>
+                {' '}· Viatura <strong>{quickSuccess.vehicle_plate}</strong> ({quickSuccess.service_name})
+              </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => downloadVehicleReceipt(quickSuccess)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 font-bold text-emerald-800 hover:bg-emerald-100"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Recibo de receção
-              </button>
-              <span className="text-emerald-700 font-bold bg-emerald-100 px-2 py-1 rounded">Pronto para Levantamento</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => downloadVehicleReceipt(quickSuccess)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+            >
+              <Download className="h-4 w-4" />
+              Recibo de receção
+            </button>
           </div>
         )}
 
         {quickError && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{quickError}</span>
           </div>
         )}
 
-        <form onSubmit={handleQuickRegister} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+        <form onSubmit={handleQuickRegister} className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-5">
           <div>
-            <label className="text-slate-600 font-semibold mb-1 block">Matrícula *</label>
-            <input
-              type="text"
-              required
-              placeholder="Ex: AEL 789 MP"
-              value={quickPlate}
-              onChange={(e) => setQuickPlate(e.target.value.toUpperCase())}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase font-bold focus:outline-none focus:border-blue-500"
-            />
+            <label htmlFor="quick-plate" className="mb-1 block font-semibold text-slate-700">Matrícula *</label>
+            <input id="quick-plate" required value={quickPlate} onChange={event => setQuickPlate(event.target.value.toUpperCase())} placeholder="Ex.: AEL 789 MP" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono font-bold uppercase focus:border-blue-500 focus:outline-none" />
           </div>
-
           <div>
-            <label className="text-slate-600 font-semibold mb-1 block">Nome do Cliente *</label>
-            <input
-              type="text"
-              required
-              placeholder="Ex: Carlos Sitoe"
-              value={quickName}
-              onChange={(e) => setQuickName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-            />
+            <label htmlFor="quick-name" className="mb-1 block font-semibold text-slate-700">Nome do cliente *</label>
+            <input id="quick-name" required value={quickName} onChange={event => setQuickName(event.target.value)} placeholder="Nome do cliente" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 focus:border-blue-500 focus:outline-none" />
           </div>
-
           <div>
-            <label className="text-slate-600 font-semibold mb-1 block">Telefone (Passaporte VIP)</label>
-            <input
-              type="text"
-              placeholder="+258 84..."
-              value={quickPhone}
-              onChange={(e) => setQuickPhone(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-500"
-            />
+            <label htmlFor="quick-phone" className="mb-1 block font-semibold text-slate-700">Telefone (Passaporte VIP)</label>
+            <input id="quick-phone" type="tel" value={quickPhone} onChange={event => setQuickPhone(event.target.value)} placeholder="+258 84..." className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 focus:border-blue-500 focus:outline-none" />
           </div>
-
           <div>
-            <label className="text-slate-600 font-semibold mb-1 block">Serviço Realizado *</label>
-            <select
-              value={quickServiceId}
-              onChange={(e) => setQuickServiceId(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:border-blue-500"
-            >
-              {services.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.price_mzn} MT)
-                </option>
+            <label htmlFor="quick-model" className="mb-1 block font-semibold text-slate-700">Modelo da viatura</label>
+            <input id="quick-model" value={quickModel} onChange={event => setQuickModel(event.target.value)} placeholder="Ex.: Toyota Corolla" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 focus:border-blue-500 focus:outline-none" />
+          </div>
+          <div>
+            <label htmlFor="quick-service" className="mb-1 block font-semibold text-slate-700">Serviço realizado *</label>
+            <select id="quick-service" required value={quickServiceId} onChange={event => setQuickServiceId(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-medium focus:border-blue-500 focus:outline-none">
+              {services.map(service => (
+                <option key={service.id} value={service.id}>{service.name} ({service.price_mzn} MT)</option>
               ))}
             </select>
           </div>
-
-          <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={quickLoading}
-              className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-1.5"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{quickLoading ? 'A registar...' : 'Gravar Conclusão'}</span>
+          <div className="flex items-end sm:col-span-2 lg:col-span-5">
+            <button type="submit" disabled={quickLoading || services.length === 0} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white shadow transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+              <CheckCircle2 className="h-5 w-5" />
+              {quickLoading ? 'A registar...' : 'Registar lavagem concluída'}
             </button>
           </div>
         </form>
-      </div>
+      </section>
 
       {/* Operator Tools Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -315,7 +280,7 @@ export default function EmployeeDashboard() {
                 filtered.map((r) => {
                   const isDone = r.status === 'concluido';
                   const nextAction = r.status === 'reservado' || r.status === 'aguardando'
-                    ? { label: 'Iniciar lavagem', status: 'em_atendimento' }
+                    ? { label: r.booking_type === 'onsite' ? 'Iniciar atendimento no local' : 'Iniciar lavagem', status: 'em_atendimento' }
                     : r.status === 'em_atendimento'
                       ? { label: 'Concluir Lavagem', status: 'concluido' }
                       : null;
@@ -355,6 +320,7 @@ export default function EmployeeDashboard() {
                             <span>Serviço: <strong>{r.service_name}</strong></span>
                             <span>Cliente: <strong>{r.customer_name}</strong></span>
                             <span>Data: <strong>{r.scheduled_date} às {r.scheduled_time}</strong></span>
+                            <span>Modalidade: <strong>{r.booking_type === 'onsite' ? 'Lavagem no local' : 'Nas instalações'}</strong></span>
                           </div>
                         </div>
 
@@ -370,6 +336,12 @@ export default function EmployeeDashboard() {
                             <p>Serviço: <strong>{r.service_name}</strong></p>
                             <p>Preço: <strong>{r.price_mzn} MT</strong></p>
                             <p>Data e hora: <strong>{r.scheduled_date} às {r.scheduled_time}</strong></p>
+                            <p>Modalidade: <strong>{r.booking_type === 'onsite' ? 'Lavagem no local' : 'Nas instalações Lava Já'}</strong></p>
+                            {r.booking_type === 'onsite' && (
+                              <p className="sm:col-span-2 lg:col-span-3 break-words">
+                                Endereço do atendimento: <strong>{r.location_address}</strong>
+                              </p>
+                            )}
                             <p>Pagamento: <strong className={r.payment_status === 'pago' ? 'text-emerald-700' : 'text-amber-700'}>
                               {r.payment_status === 'pago'
                                 ? `${r.payment_simulated ? 'Simulado' : 'Pago'} · ${r.amount_paid_mzn} MT`
@@ -389,7 +361,7 @@ export default function EmployeeDashboard() {
 
                       <div className="flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                         <div className="flex flex-wrap gap-2">
-                          {!isDone && !r.vehicle_received_at && ['reservado', 'aguardando', 'em_atendimento'].includes(r.status) && (
+                          {r.booking_type !== 'onsite' && !isDone && !r.vehicle_received_at && ['reservado', 'aguardando', 'em_atendimento'].includes(r.status) && (
                             <button
                               onClick={() => confirmVehicleReceived(r.id)}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 transition hover:bg-blue-100"
@@ -398,7 +370,7 @@ export default function EmployeeDashboard() {
                               Confirmar receção
                             </button>
                           )}
-                          {r.vehicle_received_at && (
+                          {r.booking_type !== 'onsite' && r.vehicle_received_at && (
                             <button
                               onClick={() => downloadVehicleReceipt(r)}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
@@ -407,7 +379,7 @@ export default function EmployeeDashboard() {
                               Recibo de receção
                             </button>
                           )}
-                          {['reservado', 'aguardando'].includes(r.status) && !r.vehicle_received_at && (
+                          {['reservado', 'aguardando'].includes(r.status) && (r.booking_type === 'onsite' || !r.vehicle_received_at) && (
                             <button
                               onClick={() => updateStatus(r.id, 'cancelado')}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-100"
@@ -455,23 +427,23 @@ export default function EmployeeDashboard() {
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
             <div className="flex items-center gap-2">
               <ReceiptText className="w-5 h-5 text-blue-600" />
-              <h3 className="font-bold text-sm text-slate-900">Cobranças e comprovativos</h3>
+              <h3 className="font-bold text-sm text-slate-900">Pagamentos</h3>
             </div>
             <p className="text-xs leading-relaxed text-slate-600">
-              Ao concluir uma lavagem, abra o pagamento correspondente. O voucher só é consumido junto com a confirmação atómica da cobrança.
+              Depois de concluir a lavagem, abra «Registar pagamento» para aplicar um benefício e confirmar o valor.
             </p>
             <p className="text-[11px] leading-relaxed text-amber-800">
-              M-Pesa, e-Mola, mKesh e Moza Banco continuam simulados. Para dinheiro/POS, confirme apenas depois de receber o valor no balcão.
+              M-Pesa, e-Mola, mKesh e Moza são demonstrações. Para dinheiro ou POS, confirme só depois de receber o pagamento.
             </p>
           </div>
 
           {/* Practical Note */}
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 text-xs text-blue-900 space-y-2">
-            <div className="font-bold">Atendimento no balcão:</div>
+            <div className="font-bold">No balcão:</div>
             <ul className="list-disc pl-4 space-y-1 text-slate-700">
-              <li>Confirme o benefício mostrado antes de o aplicar à conta.</li>
-              <li>O voucher é abatido uma única vez ao validar. Confirme o serviço e o valor restante com o cliente.</li>
-              <li>Registe a lavagem concluída para creditar os pontos na conta associada ao telefone do cliente.</li>
+              <li>Confira o código do benefício antes de o aplicar.</li>
+              <li>Confirme com o cliente o serviço e o valor final.</li>
+              <li>Registe a lavagem como concluída para atribuir os pontos à conta associada ao telefone.</li>
             </ul>
           </div>
           {paymentReservationId && (

@@ -17,6 +17,7 @@ contas-acesso.local.md
 # Local SQLite data
 **/*.db
 **/*.db-*
+/server/uploads/gallery/
 
 # Logs and local editor files
 logs

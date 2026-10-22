@@ -7,6 +7,11 @@ const router = express.Router();
 // GET /api/availability?date=YYYY-MM-DD&serviceId=1
 router.get('/', (req, res) => {
   const { date, serviceId, duration } = req.query;
+  const bookingType = req.query.bookingType || 'shop';
+
+  if (!['shop', 'onsite'].includes(bookingType)) {
+    return res.status(400).json({ error: 'Selecione uma modalidade de lavagem válida.' });
+  }
 
   if (!date) {
     return res.status(400).json({ error: 'A data (date=YYYY-MM-DD) é obrigatória.' });
@@ -23,7 +28,7 @@ router.get('/', (req, res) => {
   }
 
   try {
-    const slotsData = getAvailableSlots(date, durationMinutes);
+    const slotsData = getAvailableSlots(date, durationMinutes, bookingType);
     res.json(slotsData);
   } catch (error) {
     console.error('Erro ao verificar disponibilidade:', error);

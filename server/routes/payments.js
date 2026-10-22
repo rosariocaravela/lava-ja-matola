@@ -14,7 +14,9 @@ function getReservationPayment(reservationId) {
            r.status as service_status, r.scheduled_date, r.scheduled_time,
            s.name as service_name, p.original_amount_mzn, p.promotion_code,
            p.promotion_discount_mzn, p.reward_code, p.reward_discount_mzn,
+           p.mozabanco_discount_mzn,
            p.reward_title, p.reward_description, p.reward_service_name,
+           p.benefit_source,
            p.total_discount_mzn, p.amount_paid_mzn, p.method, p.status as payment_status,
            p.simulated, p.transaction_reference, p.created_at, p.paid_at
     FROM reservations r
@@ -54,11 +56,18 @@ function paymentSummary(record, calculation = null) {
       reward_description: calculation?.reward_description ?? record.reward_description,
       reward_service_name: calculation?.reward_service_name ?? record.reward_service_name,
       reward_discount_mzn: calculation?.reward_discount_mzn ?? record.reward_discount_mzn,
+      benefit_source: calculation?.voucher_source ?? record.benefit_source,
+      mozabanco_discount_mzn: calculation?.mozabanco_discount_mzn ?? record.mozabanco_discount_mzn,
+      mozabanco_discount_percentage: calculation?.mozabanco_discount_percentage ??
+        (record.method === 'mozabanco' && record.mozabanco_discount_mzn > 0 ? 10 : 0),
       total_discount_mzn: calculation?.total_discount_mzn ?? record.total_discount_mzn,
       amount_due_mzn: due,
       amount_paid_mzn: record.amount_paid_mzn,
       method: record.method,
       status: record.payment_status,
+      mozabanco_simulation_enabled: process.env.MOZABANCO_SIMULATION_ENABLED === 'true',
+      mozabanco_discount_enabled: process.env.MOZABANCO_SIMULATION_ENABLED === 'true' &&
+        process.env.MOZABANCO_DISCOUNT_ENABLED === 'true',
       simulated: Boolean(record.simulated),
       transaction_reference: record.transaction_reference,
       created_at: record.created_at,
@@ -80,12 +89,19 @@ function loadAuthorizedReservation(req, res, reservationId) {
   return reservation;
 }
 
-function calculateForCode(reservation, record, code) {
+function calculateForCode(reservation, record, code, method) {
   const voucher = code ? getRewardVoucher(db, reservation, code) : null;
   return calculatePayment(
     record.original_amount_mzn,
     record.promotion_discount_mzn,
-    voucher
+    voucher,
+    {
+      method,
+      mozabancoDiscountEnabled:
+        process.env.MOZABANCO_SIMULATION_ENABLED === 'true' &&
+        process.env.MOZABANCO_DISCOUNT_ENABLED === 'true',
+      mozabancoDiscountPercentage: 10
+    }
   );
 }
 
@@ -119,7 +135,17 @@ router.post('/:reservationId/preview-voucher', authenticateToken, (req, res) => 
     }
 
     const code = String(req.body.code || '').trim();
-    const calculation = calculateForCode(record, record, code);
+    const method = String(req.body.method || '').trim().toLowerCase();
+    if (method && !PAYMENT_METHODS.includes(method)) {
+      return res.status(400).json({ error: 'Selecione um método de pagamento válido.' });
+    }
+    if (method === 'mozabanco' && process.env.MOZABANCO_SIMULATION_ENABLED !== 'true') {
+      return res.status(409).json({ error: 'O método Moza Banco ainda não está disponível: falta a integração oficial de pagamentos.' });
+    }
+    const calculation = calculateForCode(record, record, code, method);
+    if (calculation.voucher_source === 'moza' && method !== 'balcao') {
+      return res.status(409).json({ error: 'O desconto do programa Moza só pode ser consumido com confirmação real do pagamento no balcão. Pagamentos digitais disponíveis são demonstrações.' });
+    }
     return res.json(paymentSummary(record, calculation));
   } catch (error) {
     if (error instanceof BillingError) {
@@ -140,6 +166,9 @@ router.post('/:reservationId/confirm', authenticateToken, (req, res) => {
   }
   if (!PAYMENT_METHODS.includes(method)) {
     return res.status(400).json({ error: 'Selecione um método de pagamento válido.' });
+  }
+  if (method === 'mozabanco' && process.env.MOZABANCO_SIMULATION_ENABLED !== 'true') {
+    return res.status(409).json({ error: 'O método Moza Banco ainda não está disponível: falta a integração oficial de pagamentos.' });
   }
   if (method === 'balcao' && !['employee', 'admin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'O pagamento no balcão só pode ser confirmado por um funcionário autorizado.' });
@@ -164,8 +193,37 @@ router.post('/:reservationId/confirm', authenticateToken, (req, res) => {
         throw new BillingError('Esta cobrança já foi processada.', 409);
       }
 
-      const calculation = calculateForCode(record, record, code);
-      if (calculation.voucher_redemption_id) {
+      const calculation = calculateForCode(record, record, code, method);
+      if (calculation.voucher_source === 'moza') {
+        const consumed = db.prepare(`
+          UPDATE moza_benefit_cycles
+          SET status = 'used', used_at = CURRENT_TIMESTAMP, used_reservation_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND user_id = ? AND status = 'unlocked'
+            AND redemption_code = ?
+            AND (expires_at IS NULL OR expires_at >= CURRENT_TIMESTAMP)
+        `).run(reservationId, calculation.moza_benefit_cycle_id, record.user_id, calculation.reward_code);
+        if (consumed.changes !== 1) {
+          throw new BillingError('Este benefício Moza já foi utilizado ou expirou. Atualize a cobrança e tente novamente.', 409);
+        }
+
+        const nextCycleNumber = db.prepare(`
+          SELECT COALESCE(MAX(cycle_number), 0) + 1 AS next_cycle
+          FROM moza_benefit_cycles WHERE user_id = ?
+        `).get(record.user_id).next_cycle;
+        db.prepare(`
+          INSERT INTO moza_benefit_cycles (user_id, cycle_number, status)
+          VALUES (?, ?, 'in_progress')
+        `).run(record.user_id, nextCycleNumber);
+        db.prepare(`
+          INSERT INTO audit_logs (user_id, action, entity, entity_id, details)
+          VALUES (?, 'moza_benefit_used', 'moza_benefit_cycle', ?, ?)
+        `).run(req.user.id, calculation.moza_benefit_cycle_id, JSON.stringify({
+          reservation_id: reservationId,
+          customer_id: record.user_id,
+          discount_mzn: calculation.reward_discount_mzn
+        }));
+      } else if (calculation.voucher_redemption_id) {
         const consumed = db.prepare(`
           UPDATE reward_redemptions
           SET status = 'utilizado', used_at = CURRENT_TIMESTAMP
@@ -182,17 +240,19 @@ router.post('/:reservationId/confirm', authenticateToken, (req, res) => {
 
       db.prepare(`
         UPDATE reservation_payments
-        SET reward_code = ?, reward_discount_mzn = ?, reward_title = ?,
-            reward_description = ?, reward_service_name = ?, total_discount_mzn = ?,
+        SET reward_code = ?, reward_discount_mzn = ?, mozabanco_discount_mzn = ?,
+            reward_title = ?, reward_description = ?, reward_service_name = ?, benefit_source = ?, total_discount_mzn = ?,
             amount_paid_mzn = ?, method = ?, status = 'pago', simulated = ?,
             transaction_reference = ?, paid_at = CURRENT_TIMESTAMP
         WHERE reservation_id = ? AND status = 'pendente'
       `).run(
         calculation.reward_code,
         calculation.reward_discount_mzn,
+        calculation.mozabanco_discount_mzn,
         calculation.reward_title,
         calculation.reward_description,
         calculation.reward_service_name,
+        calculation.voucher_source || 'passaporte',
         calculation.total_discount_mzn,
         calculation.amount_due_mzn,
         method,

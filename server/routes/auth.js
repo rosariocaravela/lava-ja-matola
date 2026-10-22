@@ -1,5 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const db = require('../db');
 const { MINIMUM_REWARD_POINTS, WELCOME_BONUS_POINTS } = require('../config/loyalty');
 const { generateToken, authenticateToken } = require('../middleware/auth');
@@ -116,6 +118,120 @@ router.post('/login', (req, res) => {
   } catch (error) {
     console.error('Erro no login:', error);
     res.status(500).json({ error: 'Erro ao autenticar utilizador.' });
+  }
+});
+
+router.post('/forgot-password', async (req, res) => {
+  const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    return res.status(400).json({ error: 'Introduza um endereço de email válido.' });
+  }
+
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpConfigured = Boolean(
+    process.env.SMTP_HOST &&
+    Number.isInteger(smtpPort) &&
+    smtpPort > 0 &&
+    smtpPort <= 65535 &&
+    process.env.SMTP_USER &&
+    process.env.SMTP_PASSWORD &&
+    process.env.SMTP_FROM
+  );
+  if (!smtpConfigured) {
+    return res.status(503).json({ error: 'A recuperação por email ainda não está configurada. Contacte o suporte do estabelecimento.' });
+  }
+
+  const genericMessage = 'Se existir uma conta associada a esse email, receberá instruções para redefinir a palavra-passe.';
+  const user = db.prepare('SELECT id, email FROM users WHERE email = ? AND is_active = 1').get(email);
+  if (!user) {
+    return res.status(202).json({ message: genericMessage });
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const baseUrl = process.env.CLIENT_PUBLIC_URL || 'http://localhost:3000';
+
+  try {
+    const resetUrl = new URL('/recuperar-senha', baseUrl);
+    resetUrl.searchParams.set('token', token);
+    db.transaction(() => {
+      db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(user.id);
+      db.prepare(`
+        INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+        VALUES (?, ?, datetime('now', '+30 minutes'))
+      `).run(user.id, tokenHash);
+    })();
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: smtpPort,
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASSWORD
+      }
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM,
+      to: user.email,
+      subject: 'Redefinição da palavra-passe — Lava Já',
+      text: `Use este link para redefinir a sua palavra-passe (válido por 30 minutos): ${resetUrl.toString()}`,
+      html: `<p>Recebemos um pedido para redefinir a palavra-passe da sua conta Lava Já.</p><p><a href="${resetUrl.toString()}">Redefinir palavra-passe</a></p><p>O link expira em 30 minutos. Se não pediu esta alteração, ignore esta mensagem.</p>`
+    });
+    return res.status(202).json({ message: genericMessage });
+  } catch (error) {
+    db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ? AND token_hash = ?').run(user.id, tokenHash);
+    console.error('Erro ao enviar email de recuperação de palavra-passe:', error);
+    return res.status(503).json({ error: 'Não foi possível enviar o email de recuperação. Tente novamente mais tarde.' });
+  }
+});
+
+router.post('/reset-password', (req, res) => {
+  const token = typeof req.body.token === 'string' ? req.body.token.trim() : '';
+  const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword : '';
+  if (!/^[a-f0-9]{64}$/i.test(token)) {
+    return res.status(400).json({ error: 'O link de redefinição é inválido ou expirou.' });
+  }
+  if (newPassword.length < 12 || Buffer.byteLength(newPassword, 'utf8') > 72) {
+    return res.status(400).json({ error: 'A nova palavra-passe deve ter pelo menos 12 caracteres e no máximo 72 bytes.' });
+  }
+
+  try {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const validToken = db.prepare(`
+      SELECT id FROM password_reset_tokens
+      WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+    `).get(tokenHash);
+    if (!validToken) {
+      return res.status(400).json({ error: 'O link de redefinição é inválido ou expirou.' });
+    }
+    const passwordHash = bcrypt.hashSync(newPassword, bcrypt.genSaltSync(10));
+    const resetPassword = db.transaction(() => {
+      const record = db.prepare(`
+        SELECT id, user_id FROM password_reset_tokens
+        WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+      `).get(tokenHash);
+      if (!record) return false;
+
+      const updated = db.prepare(`
+        UPDATE users
+        SET password_hash = ?, must_change_password = 0, auth_version = auth_version + 1
+        WHERE id = ? AND is_active = 1
+      `).run(passwordHash, record.user_id);
+      if (updated.changes !== 1) return false;
+
+      db.prepare('UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?').run(record.id);
+      db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ? AND id != ?').run(record.user_id, record.id);
+      return true;
+    });
+
+    if (!resetPassword()) {
+      return res.status(400).json({ error: 'O link de redefinição é inválido ou expirou.' });
+    }
+    return res.json({ message: 'Palavra-passe redefinida. Inicie sessão com a nova palavra-passe.' });
+  } catch (error) {
+    console.error('Erro ao redefinir palavra-passe:', error);
+    return res.status(500).json({ error: 'Não foi possível redefinir a palavra-passe.' });
   }
 });
 

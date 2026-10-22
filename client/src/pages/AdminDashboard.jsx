@@ -1025,6 +1025,49 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+              <h3 className="mb-1 text-sm font-bold text-slate-900">Lavagem no local do cliente</h3>
+              <p className="mb-3 text-[11px] leading-relaxed text-slate-600">
+                Defina a janela de atendimento para condomínios, casas e empresas. A disponibilidade é gerida separadamente das vagas do estabelecimento.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-600">Início do atendimento</label>
+                  <input
+                    type="time"
+                    required
+                    value={settings.onsite_open_time || '08:00'}
+                    onChange={(e) => setSettings({ ...settings, onsite_open_time: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-semibold text-slate-600">Fim do atendimento</label>
+                  <input
+                    type="time"
+                    required
+                    value={settings.onsite_close_time || '17:00'}
+                    onChange={(e) => setSettings({ ...settings, onsite_close_time: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2"
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="mb-1 block font-semibold text-slate-600">Intervalo entre marcações (minutos)</label>
+                <input
+                  type="number"
+                  min="15"
+                  max="720"
+                  step="15"
+                  required
+                  value={settings.onsite_slot_interval_minutes ?? 120}
+                  onChange={(e) => setSettings({ ...settings, onsite_slot_interval_minutes: parseInt(e.target.value, 10) })}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">Por defeito, as marcações são feitas de 2 em 2 horas.</p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-slate-600 font-semibold mb-1 block">Vagas Simultâneas (Capacidade)</label>
@@ -1038,7 +1081,7 @@ export default function AdminDashboard() {
                 />
               </div>
               <div>
-                <label className="text-slate-600 font-semibold mb-1 block">Intervalo de Slots (minutos)</label>
+                <label className="text-slate-600 font-semibold mb-1 block">Intervalo entre vagas nas instalações (minutos)</label>
                 <input
                   type="number"
                   value={settings.slot_interval_minutes}

@@ -14,20 +14,37 @@ function minutesToTime(minutes) {
 }
 
 // Check slot availability for a given date, duration, and optional excluded reservation ID (for updates)
-function checkAvailability(date, startTime, durationMinutes, excludeReservationId = null) {
-  const settings = db.prepare('SELECT open_time, close_time, simultaneous_capacity FROM business_settings WHERE id = 1').get();
-  const capacity = settings.simultaneous_capacity || 3;
+function checkAvailability(date, startTime, durationMinutes, excludeReservationId = null, bookingType = 'shop') {
+  const settings = db.prepare(`
+    SELECT open_time, close_time, slot_interval_minutes, simultaneous_capacity,
+           onsite_open_time, onsite_close_time, onsite_slot_interval_minutes
+    FROM business_settings WHERE id = 1
+  `).get();
+  const onsite = bookingType === 'onsite';
+  const openTime = onsite ? settings.onsite_open_time : settings.open_time;
+  const closeTime = onsite ? settings.onsite_close_time : settings.close_time;
+  const interval = onsite
+    ? settings.onsite_slot_interval_minutes
+    : settings.slot_interval_minutes;
+  const capacity = onsite ? 1 : (settings.simultaneous_capacity || 3);
 
   const startMinutes = timeToMinutes(startTime);
   const endMinutes = startMinutes + durationMinutes;
-  const openMinutes = timeToMinutes(settings.open_time);
-  const closeMinutes = timeToMinutes(settings.close_time);
+  const openMinutes = timeToMinutes(openTime);
+  const closeMinutes = timeToMinutes(closeTime);
 
   // Check if within operating hours
   if (startMinutes < openMinutes || endMinutes > closeMinutes) {
     return {
       available: false,
-      reason: `Horário fora do funcionamento (${settings.open_time} às ${settings.close_time}).`
+      reason: `Horário fora do funcionamento (${openTime} às ${closeTime}).`
+    };
+  }
+
+  if (onsite && (startMinutes - openMinutes) % interval !== 0) {
+    return {
+      available: false,
+      reason: `As marcações no local são feitas de ${interval} em ${interval} minutos.`
     };
   }
 
@@ -58,8 +75,9 @@ function checkAvailability(date, startTime, durationMinutes, excludeReservationI
     FROM reservations
     WHERE scheduled_date = ? 
       AND status NOT IN ('cancelado', 'concluido')
+      AND booking_type = ?
   `;
-  const params = [date];
+  const params = [date, bookingType];
 
   if (excludeReservationId) {
     query += ' AND id != ?';
@@ -123,17 +141,27 @@ function checkAvailability(date, startTime, durationMinutes, excludeReservationI
 }
 
 // Generate all available slots for a specific date and duration
-function getAvailableSlots(date, durationMinutes = 30) {
-  const settings = db.prepare('SELECT open_time, close_time, slot_interval_minutes, simultaneous_capacity FROM business_settings WHERE id = 1').get();
-  const interval = settings.slot_interval_minutes || 30;
-  const openMinutes = timeToMinutes(settings.open_time);
-  const closeMinutes = timeToMinutes(settings.close_time);
+function getAvailableSlots(date, durationMinutes = 30, bookingType = 'shop') {
+  const settings = db.prepare(`
+    SELECT open_time, close_time, slot_interval_minutes, simultaneous_capacity,
+           onsite_open_time, onsite_close_time, onsite_slot_interval_minutes
+    FROM business_settings WHERE id = 1
+  `).get();
+  const onsite = bookingType === 'onsite';
+  const interval = onsite
+    ? settings.onsite_slot_interval_minutes || 120
+    : settings.slot_interval_minutes || 30;
+  const openTime = onsite ? settings.onsite_open_time : settings.open_time;
+  const closeTime = onsite ? settings.onsite_close_time : settings.close_time;
+  const capacity = onsite ? 1 : settings.simultaneous_capacity;
+  const openMinutes = timeToMinutes(openTime);
+  const closeMinutes = timeToMinutes(closeTime);
 
   const slots = [];
 
   for (let m = openMinutes; m + durationMinutes <= closeMinutes; m += interval) {
     const timeStr = minutesToTime(m);
-    const check = checkAvailability(date, timeStr, durationMinutes);
+    const check = checkAvailability(date, timeStr, durationMinutes, null, bookingType);
 
     slots.push({
       time: timeStr,
@@ -147,8 +175,10 @@ function getAvailableSlots(date, durationMinutes = 30) {
   return {
     date,
     durationMinutes,
-    capacity: settings.simultaneous_capacity,
-    businessHours: { open: settings.open_time, close: settings.close_time },
+    bookingType,
+    intervalMinutes: interval,
+    capacity,
+    businessHours: { open: openTime, close: closeTime },
     slots
   };
 }

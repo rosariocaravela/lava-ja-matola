@@ -2,36 +2,61 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Car, Calendar, Clock, Award, ShieldCheck, Sparkles, MapPin, 
-  ArrowRight, CheckCircle2, ChevronRight, Users, Tag, Bot, 
-  ExternalLink, HelpCircle, ChevronDown, ChevronUp, AlertCircle
+  ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Users, Tag, Bot,
+  ExternalLink, HelpCircle, ChevronDown, ChevronUp, AlertCircle, Star
 } from 'lucide-react';
 import { apiRequest } from '../api';
 import ShareBusiness from '../components/ShareBusiness';
+import GallerySection from '../components/GallerySection';
+import imagem1 from '../assets/imagem/imagem1.jpg';
+import imagem3 from '../assets/imagem/imagem3.jpg';
+import imagem4 from '../assets/imagem/imagem4.jpg';
+
+const heroSlides = [
+  { src: '/images.jpg', alt: 'Instalações do Lava Já Matola e uma viatura pronta para lavagem' },
+  { src: imagem1, alt: 'Campanha de 10% de desconto ao pagar com Moza Banco' },
+  { src: imagem3, alt: 'Cartão digital Lava Já com pontos e recompensas' },
+  { src: imagem4, alt: 'Serviço de lavagem automóvel no Lava Já Matola' }
+];
 
 export default function HomePage({ onOpenAi }) {
   const navigate = useNavigate();
   const [services, setServices] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [reviewData, setReviewData] = useState({ reviews: [], summary: { count: 0, average_rating: null } });
   const [loading, setLoading] = useState(true);
   const [openFaq, setOpenFaq] = useState(null);
+  const [heroSlide, setHeroSlide] = useState(0);
 
   useEffect(() => {
     loadHomeData();
   }, []);
 
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      setHeroSlide(current => (current + 1) % heroSlides.length);
+    }, 6000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   async function loadHomeData() {
     try {
       setLoading(true);
-      const [srvData, promoData, settData] = await Promise.all([
+      const [srvData, promoData, settData, publicReviews] = await Promise.all([
         apiRequest('/services'),
         apiRequest('/promotions'),
-        apiRequest('/settings')
+        apiRequest('/settings'),
+        apiRequest('/reviews')
       ]);
 
       setServices(srvData);
       setPromotions(promoData);
       setSettings(settData);
+      setReviewData(publicReviews);
     } catch (err) {
       console.error('Erro ao carregar dados da página inicial:', err);
     } finally {
@@ -60,18 +85,11 @@ export default function HomePage({ onOpenAi }) {
   return (
     <div className="space-y-16 pb-16">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-white pt-12 pb-20 sm:pt-20 sm:pb-28">
-        <img
-          src="/images.jpg"
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover object-center"
-        />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-900/70 to-slate-900/45"></div>
+      <section className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 text-white py-10 sm:py-14 lg:py-16">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(59,130,246,0.3),rgba(255,255,255,0))]"></div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-            <div className="lg:col-span-12 space-y-6 text-center lg:text-left">
+        <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-12">
+            <div className="space-y-6 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-xs font-semibold backdrop-blur-md">
                 <Sparkles className="w-3.5 h-3.5 text-blue-400" />
                 <span>Lava Já Matola — Lavagem rápida e de confiança</span>
@@ -88,7 +106,7 @@ export default function HomePage({ onOpenAi }) {
               <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start pt-2">
                 <Link
                   to="/reservar"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-600/30 hover:scale-102 transition-all cursor-pointer"
+                  className="inline-flex items-center justify-center gap-2 whitespace-nowrap px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-600/30 hover:scale-102 transition-all cursor-pointer"
                 >
                   <Calendar className="w-4 h-4" />
                   <span>Marcar Lavagem Agora</span>
@@ -112,6 +130,60 @@ export default function HomePage({ onOpenAi }) {
               </div>
             </div>
 
+            <div
+              className="overflow-hidden rounded-3xl border border-white/15 bg-white p-2 shadow-2xl shadow-black/30 sm:p-3"
+              role="region"
+              aria-label="Imagens do Lava Já Matola"
+            >
+              <div className="relative aspect-square overflow-hidden rounded-2xl bg-white sm:aspect-[4/3]">
+                {heroSlides.map((slide, index) => (
+                  <img
+                    key={slide.src}
+                    src={slide.src}
+                    alt={slide.alt}
+                    aria-hidden={index !== heroSlide}
+                    className={`absolute inset-0 h-full w-full object-contain p-1 transition-opacity duration-700 motion-reduce:transition-none ${
+                      index === heroSlide ? 'opacity-100' : 'opacity-0'
+                    }`}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center justify-between px-1 pt-3 sm:px-2">
+                <span className="text-xs font-semibold text-slate-500" aria-live="polite">
+                  {heroSlide + 1} / {heroSlides.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHeroSlide(current => (current - 1 + heroSlides.length) % heroSlides.length)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-700 transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                    aria-label="Ver imagem anterior"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  {heroSlides.map((slide, index) => (
+                    <button
+                      key={slide.src}
+                      type="button"
+                      onClick={() => setHeroSlide(index)}
+                      className={`h-2.5 rounded-full transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+                        index === heroSlide ? 'w-6 bg-blue-600' : 'w-2.5 bg-slate-300 hover:bg-slate-400'
+                      }`}
+                      aria-label={`Mostrar imagem ${index + 1}: ${slide.alt}`}
+                      aria-current={index === heroSlide ? 'true' : undefined}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setHeroSlide(current => (current + 1) % heroSlides.length)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-700 transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                    aria-label="Ver próxima imagem"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -228,6 +300,48 @@ export default function HomePage({ onOpenAi }) {
             );
           })}
         </div>
+      </section>
+
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-600">Experiências reais</span>
+            <h2 className="mt-1 text-2xl font-black text-slate-900">Avaliações dos clientes</h2>
+          </div>
+          {reviewData.summary.count > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-900">
+              <span className="inline-flex items-center gap-1">
+                <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
+                {reviewData.summary.average_rating}/5
+              </span>
+              <span className="ml-2 text-xs font-medium">({reviewData.summary.count} avaliações)</span>
+            </div>
+          )}
+        </div>
+        {reviewData.reviews.length === 0 ? (
+          <p className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+            Ainda não existem avaliações publicadas. Após concluir um serviço, poderá partilhar a sua experiência.
+          </p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {reviewData.reviews.slice(0, 6).map(review => (
+              <article key={review.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex gap-1" aria-label={`${review.rating} de 5 estrelas`}>
+                  {[1, 2, 3, 4, 5].map(star => (
+                    <Star
+                      key={star}
+                      className={`h-4 w-4 ${star <= review.rating ? 'fill-amber-400 text-amber-500' : 'text-slate-300'}`}
+                    />
+                  ))}
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-slate-700">{review.comment}</p>
+                <p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  Serviço: <span className="font-semibold text-slate-700">{review.service_name}</span>
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* How it works Section */}
@@ -406,6 +520,8 @@ export default function HomePage({ onOpenAi }) {
           </div>
         </div>
       </section>
+
+      <GallerySection />
 
       {/* FAQ Section */}
       <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">

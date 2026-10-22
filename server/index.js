@@ -15,6 +15,8 @@ const dashboardRoutes = require('./routes/dashboard');
 const aiRoutes = require('./routes/ai');
 const usersRoutes = require('./routes/users');
 const paymentsRoutes = require('./routes/payments');
+const reviewsRoutes = require('./routes/reviews');
+const galleryRoutes = require('./routes/gallery');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -37,6 +39,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/ai-assistant', aiRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api/reviews', reviewsRoutes);
+app.use('/api/gallery', galleryRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -51,7 +55,14 @@ app.get('/api/health', (req, res) => {
 // Centralized error handling
 app.use((err, req, res, next) => {
   console.error('Erro não tratado:', err);
-  res.status(500).json({ error: 'Ocorreu um erro interno no servidor.' });
+  const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 500 ? err.status : 500;
+  res.status(status).json({
+    error: status === 413
+      ? 'A fotografia excede o limite de 5 MB.'
+      : status === 400
+        ? 'O pedido enviado é inválido.'
+        : 'Ocorreu um erro interno no servidor.'
+  });
 });
 
 app.listen(PORT, () => {
