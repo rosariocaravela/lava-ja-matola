@@ -47,6 +47,8 @@ As contas e os respetivos dados permanecem na base de dados atual. As palavras-p
 
 O segredo JWT deve ser definido em `server/.env` com um valor aleatório único de, pelo menos, 32 caracteres. Não reutilize o valor de exemplo. A alteração do segredo invalida as sessões JWT existentes.
 
+Para criar o primeiro administrador no Render, configure `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` nas variáveis de ambiente do serviço backend e faça um novo deploy. A palavra-passe deve ter pelo menos 12 caracteres. O administrador só é criado se o email ainda não existir; reinícios não alteram uma conta existente, e uma conta com esse email que não seja administradora causa erro explícito. Guarde as credenciais apenas no gestor de variáveis do Render, nunca no GitHub. Depois do primeiro acesso, pode remover as três variáveis do serviço e fazer novo deploy; a conta permanece na base de dados.
+
 A recuperação da palavra-passe envia um link de utilização única, válido por 30 minutos. Para a activar, configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` e `CLIENT_PUBLIC_URL` em `server/.env`, usando credenciais SMTP próprias e uma URL pública HTTPS em produção. Sem SMTP configurado, o pedido de recuperação apresenta uma mensagem de indisponibilidade e não envia email.
 
 O projecto não contém uma integração oficial com o Moza Banco. `MOZABANCO_SIMULATION_ENABLED` e `MOZABANCO_DISCOUNT_ENABLED` ficam desativados por predefinição. Só os active para testes demonstrativos; o desconto de 10% só deve ser activado após autorização comercial e não representa uma transacção bancária real.

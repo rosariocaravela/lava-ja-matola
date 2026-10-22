@@ -36,6 +36,7 @@ const {
 const { checkAvailability, getAvailableSlots } = require('../utils/scheduling');
 const { awardRecurringBonusIfDue, RECURRING_BONUS_DESCRIPTION } = require('../utils/loyalty');
 const { normalizeLegacyLoyaltyBonuses } = require('../utils/loyalty-migration');
+const { bootstrapAdmin } = require('../utils/bootstrap-admin');
 const { generateToken } = require('../middleware/auth');
 const { calculatePayment } = require('../utils/billing');
 const reservationsRoutes = require('../routes/reservations');
@@ -529,6 +530,42 @@ async function runTests() {
     } finally {
       process.env.DB_PATH = originalDatabasePath;
     }
+  });
+
+  test('Administrador inicial por ambiente é criado uma vez sem substituir uma conta existente', () => {
+    const credentials = {
+      INITIAL_ADMIN_NAME: 'Administrador Inicial de Teste',
+      INITIAL_ADMIN_EMAIL: `initial-admin-${Date.now()}@lavaja.test`,
+      INITIAL_ADMIN_PASSWORD: 'senha-de-teste-forte-123'
+    };
+
+    assert.deepStrictEqual(bootstrapAdmin(db, {}), { created: false, skipped: true });
+    assert.throws(
+      () => bootstrapAdmin(db, { INITIAL_ADMIN_EMAIL: credentials.INITIAL_ADMIN_EMAIL }),
+      /Configure INITIAL_ADMIN_NAME/
+    );
+    assert.throws(
+      () => bootstrapAdmin(db, { ...credentials, INITIAL_ADMIN_PASSWORD: 'curta' }),
+      /pelo menos 12 caracteres/
+    );
+
+    assert.deepStrictEqual(bootstrapAdmin(db, credentials), { created: true, skipped: false });
+    const created = db.prepare('SELECT id, name, email, role, password_hash FROM users WHERE email = ?')
+      .get(credentials.INITIAL_ADMIN_EMAIL);
+    assert.strictEqual(created.name, credentials.INITIAL_ADMIN_NAME);
+    assert.strictEqual(created.role, 'admin');
+    assert.strictEqual(bcrypt.compareSync(credentials.INITIAL_ADMIN_PASSWORD, created.password_hash), true);
+
+    const originalHash = created.password_hash;
+    assert.deepStrictEqual(bootstrapAdmin(db, {
+      ...credentials,
+      INITIAL_ADMIN_PASSWORD: 'outra-senha-nao-aplicada-123'
+    }), { created: false, skipped: true });
+    assert.strictEqual(
+      db.prepare('SELECT password_hash FROM users WHERE id = ?').get(created.id).password_hash,
+      originalHash,
+      'Um reinício não deve substituir a palavra-passe existente'
+    );
   });
 
   await testAsync('Login, perfil e permissões por papel', async () => {

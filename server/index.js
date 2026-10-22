@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const db = require('./db');
+const { bootstrapAdmin } = require('./utils/bootstrap-admin');
 
 const authRoutes = require('./routes/auth');
 const servicesRoutes = require('./routes/services');
@@ -20,6 +22,16 @@ const galleryRoutes = require('./routes/gallery');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+try {
+  const adminBootstrap = bootstrapAdmin(db);
+  if (adminBootstrap.created) {
+    console.log('Conta administradora inicial criada a partir das variáveis de ambiente.');
+  }
+} catch (error) {
+  console.error('Não foi possível configurar a conta administradora inicial:', error.message);
+  process.exit(1);
+}
 
 // Middleware
 app.use(cors());
