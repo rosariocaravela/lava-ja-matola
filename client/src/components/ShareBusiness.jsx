@@ -75,7 +75,7 @@ export default function ShareBusiness() {
         onClick={handleShare}
         aria-expanded={isOpen}
         aria-haspopup="true"
-        className="inline-flex min-h-[52px] items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-white/25 bg-white/10 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-slate-950/10 backdrop-blur-sm transition duration-200 hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:translate-y-0 select-none"
+        className="inline-flex min-h-[52px] max-w-full items-center justify-center gap-2 whitespace-normal rounded-xl border border-white/25 bg-white/10 px-4 py-3.5 text-center text-sm font-bold text-white shadow-lg shadow-slate-950/10 backdrop-blur-sm transition duration-200 hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 active:translate-y-0 select-none sm:whitespace-nowrap sm:px-6"
       >
         <Share2 className="h-4 w-4" />
         Partilhar e ganhar 5% de desconto

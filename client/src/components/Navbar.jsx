@@ -62,14 +62,14 @@ export default function Navbar({ onOpenAi, onOpenNotifications }) {
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-black text-xl tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-300 bg-clip-text text-transparent">
+              <span className="whitespace-nowrap text-lg font-black tracking-tight bg-gradient-to-r from-white via-slate-100 to-blue-300 bg-clip-text text-transparent sm:text-xl">
                 Lava Já
               </span>
-              <span className="px-1.5 py-0.2 bg-blue-500 text-white text-[11px] font-extrabold rounded-md shadow-xs">
+              <span className="hidden px-1.5 py-0.2 bg-blue-500 text-white text-[11px] font-extrabold rounded-md shadow-xs min-[360px]:inline-flex">
                 Matola
               </span>
             </div>
-            <p className="text-[10px] text-slate-400 font-medium tracking-wide">Lavagem rápida e de confiança</p>
+            <p className="hidden text-[10px] text-slate-400 font-medium tracking-wide min-[360px]:block">Lavagem rápida e de confiança</p>
           </div>
         </Link>
 
@@ -154,10 +154,11 @@ export default function Navbar({ onOpenAi, onOpenNotifications }) {
           ) : (
             <Link
               to="/login"
+              aria-label="Entrar"
               className="flex items-center gap-1.5 px-3.5 py-1.5 bg-white text-slate-900 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all shadow-xs"
             >
               <LogIn className="w-4 h-4 text-blue-600" />
-              <span>Entrar</span>
+              <span className="hidden min-[390px]:inline">Entrar</span>
             </Link>
           )}
 
