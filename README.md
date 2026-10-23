@@ -33,6 +33,8 @@ O agendamento é apresentado em duas etapas. Na primeira, o cliente escolhe a mo
 
 Uma marcação nas instalações não comprova que a viatura já foi entregue. Quando o cliente chega ao estabelecimento, um funcionário ou administrador confirma a receção no painel operacional. A confirmação identifica a conta e a hora, coloca a viatura em espera e disponibiliza ao cliente um comprovativo descarregável. Na modalidade no local, não há receção da viatura no balcão; o endereço informado fica visível no painel operacional. O comprovativo de marcação não comprova pagamento nem conclusão da lavagem.
 
+No painel do cliente, cada marcação ativa mostra a posição prevista e quantas marcações do mesmo dia e modalidade têm horário anterior. A contagem é privada: não apresenta nomes, matrículas nem referências de outros clientes. A fila pública (`/api/queue`) também apresenta apenas totais agregados. Reservas concluídas ou canceladas deixam de contar; o painel atualiza a posição a cada 15 segundos. A posição segue a ordem dos horários e não é uma estimativa de espera; atendimentos podem ocorrer em simultâneo conforme a capacidade das vagas.
+
 ### Partilha do Lava Já
 
 O botão **«Partilhar o Lava Já»**, disponível na página inicial, usa o menu de partilha do dispositivo quando disponível. Caso contrário, oferece atalhos para WhatsApp, Facebook e Telegram, além de copiar o endereço do site. Em desenvolvimento local, o endereço `localhost` só funciona no computador que está a executar a aplicação; para os clientes acederem, partilhe o endereço público do ngrok ou configure um domínio.
@@ -216,8 +218,9 @@ O assistente foi projectado para operar em dois modos:
 4. Preencha os dados da viatura, aplique o código promocional `MATOLA15` se estiver ativo e confirme.
 5. Veja a referência da reserva e a vaga atribuída.
 
-### Passo 4: Fila ao Vivo
-1. Aceda a **«Fila ao Vivo»** para consultar os registos do dia e distinguir viaturas prontas para levantamento das reservas e atendimentos.
+### Passo 4: Acompanhamento da Fila
+1. No painel do cliente, consulte a posição prevista da sua marcação e quantas marcações têm horário anterior. A informação é privada e não identifica outros clientes.
+2. O painel atualiza a contagem a cada 15 segundos; quando o funcionário conclui uma lavagem, ela deixa de contar como ativa.
 
 ### Passo 5: Painel Operacional (Funcionário)
 1. Inicie sessão em `/login` com as credenciais da conta individual de funcionário.

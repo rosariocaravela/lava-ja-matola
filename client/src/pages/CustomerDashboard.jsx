@@ -12,6 +12,7 @@ export default function CustomerDashboard() {
   const { user, loyalty, refreshProfile } = useAuth();
 
   const [reservations, setReservations] = useState([]);
+  const [queuePositions, setQueuePositions] = useState([]);
   const [reservationFilter, setReservationFilter] = useState('all');
   const [expandedReservationId, setExpandedReservationId] = useState(null);
   const [vouchers, setVouchers] = useState([]);
@@ -71,14 +72,16 @@ export default function CustomerDashboard() {
   async function loadReservations() {
     try {
       setLoading(true);
-      const [data, loyaltyData, myReviews] = await Promise.all([
+      const [data, loyaltyData, myReviews, queueData] = await Promise.all([
         apiRequest('/reservations'),
         apiRequest('/loyalty/me'),
-        apiRequest('/reviews/mine')
+        apiRequest('/reviews/mine'),
+        apiRequest('/reservations/queue-position')
       ]);
       setReservations(data);
       setVouchers(loyaltyData.redemptions || []);
       setReviews(myReviews);
+      setQueuePositions(queueData);
     } catch (err) {
       console.error(err);
     } finally {
@@ -88,8 +91,12 @@ export default function CustomerDashboard() {
 
   async function refreshReservations() {
     try {
-      const data = await apiRequest('/reservations');
+      const [data, queueData] = await Promise.all([
+        apiRequest('/reservations'),
+        apiRequest('/reservations/queue-position')
+      ]);
       setReservations(data);
+      setQueuePositions(queueData);
     } catch (err) {
       console.error('Erro ao atualizar as reservas do cliente:', err);
     }
@@ -142,7 +149,8 @@ export default function CustomerDashboard() {
   }
 
   const activeWash = reservations.find(r => r.status === 'em_atendimento');
-  const nextReservation = reservations.find(r => r.status === 'reservado');
+  const nextQueuePosition = queuePositions[0];
+  const nextReservation = reservations.find(r => r.id === nextQueuePosition?.reservation_id);
   const visibleReservations = reservations.filter(reservation => {
     if (reservationFilter === 'scheduled') {
       return ['reservado', 'aguardando', 'em_atendimento'].includes(reservation.status);
@@ -382,6 +390,29 @@ export default function CustomerDashboard() {
           </div>
         </div>
       </div>
+
+      {nextQueuePosition && (
+        <section
+          className="flex flex-col gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-5 sm:flex-row sm:items-center sm:justify-between"
+          aria-live="polite"
+        >
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-blue-700">Fila da sua marcação</p>
+            <p className="mt-1 text-lg font-black text-slate-900">
+              {nextQueuePosition.ahead_count === 0
+                ? 'A sua é a próxima marcação prevista'
+                : `${nextQueuePosition.ahead_count} ${nextQueuePosition.ahead_count === 1 ? 'carro' : 'carros'} com horário antes do seu`}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              Para {new Date(`${nextQueuePosition.scheduled_date}T00:00:00`).toLocaleDateString('pt-MZ', { day: '2-digit', month: 'long' })} às {nextQueuePosition.scheduled_time}, posição prevista: {nextQueuePosition.position}.ª de {nextQueuePosition.queue_size} marcações ativas.
+              {' '}A contagem atualiza automaticamente a cada 15 segundos.
+            </p>
+          </div>
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center self-start rounded-2xl bg-blue-600 text-2xl font-black text-white shadow-sm sm:self-auto">
+            {nextQueuePosition.position}.ª
+          </div>
+        </section>
+      )}
 
       {/* Next Upcoming Booking Alert */}
       {nextReservation && (

@@ -76,6 +76,48 @@ router.get('/', authenticateToken, (req, res) => {
   }
 });
 
+// Customers can see queue counts for their own active bookings without exposing other customers.
+router.get('/queue-position', authenticateToken, (req, res) => {
+  if (req.user.role !== 'customer') {
+    return res.status(403).json({ error: 'Esta consulta está disponível apenas para clientes.' });
+  }
+
+  try {
+    const queuePositions = db.prepare(`
+      SELECT own.id as reservation_id, own.scheduled_date, own.scheduled_time,
+             own.booking_type,
+             (
+               SELECT COUNT(*)
+               FROM reservations ahead
+               WHERE ahead.scheduled_date = own.scheduled_date
+                 AND ahead.booking_type = own.booking_type
+                 AND ahead.status IN ('reservado', 'aguardando', 'em_atendimento')
+                 AND ahead.scheduled_time < own.scheduled_time
+             ) as ahead_count,
+             (
+               SELECT COUNT(*)
+               FROM reservations active
+               WHERE active.scheduled_date = own.scheduled_date
+                 AND active.booking_type = own.booking_type
+                 AND active.status IN ('reservado', 'aguardando', 'em_atendimento')
+             ) as queue_size
+      FROM reservations own
+      WHERE own.user_id = ?
+        AND own.status IN ('reservado', 'aguardando', 'em_atendimento')
+        AND own.scheduled_date >= date('now', '+2 hours')
+      ORDER BY own.scheduled_date ASC, own.scheduled_time ASC, own.id ASC
+    `).all(req.user.id);
+
+    return res.json(queuePositions.map(item => ({
+      ...item,
+      position: item.ahead_count + 1
+    })));
+  } catch (error) {
+    console.error('Erro ao consultar a posição na fila:', error);
+    return res.status(500).json({ error: 'Erro ao consultar a posição na fila.' });
+  }
+});
+
 // GET /api/reservations/:id - Get details with history
 router.get('/:id', authenticateToken, (req, res) => {
   const { id } = req.params;

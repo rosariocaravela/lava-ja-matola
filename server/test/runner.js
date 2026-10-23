@@ -40,6 +40,7 @@ const { bootstrapAdmin } = require('../utils/bootstrap-admin');
 const { generateToken } = require('../middleware/auth');
 const { calculatePayment } = require('../utils/billing');
 const reservationsRoutes = require('../routes/reservations');
+const queueRoutes = require('../routes/queue');
 const aiRoutes = require('../routes/ai');
 const paymentsRoutes = require('../routes/payments');
 const servicesRoutes = require('../routes/services');
@@ -1348,6 +1349,115 @@ async function runTests() {
       false,
       'A lavagem no local deve respeitar o horário configurado para esse serviço'
     );
+  });
+
+  await testAsync('Posição na fila mostra apenas contagens e atualiza após concluir um serviço', async () => {
+    const customers = db.prepare("SELECT id, name, role FROM users WHERE role = 'customer' ORDER BY id LIMIT 2").all();
+    const employee = db.prepare("SELECT id, name, role FROM users WHERE role = 'employee' LIMIT 1").get();
+    const service = db.prepare('SELECT id FROM services LIMIT 1').get();
+    const today = new Date().toISOString().slice(0, 10);
+    const futureDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const suffix = Date.now().toString();
+    const reservationIds = [];
+    const insertReservation = db.prepare(`
+      INSERT INTO reservations (
+        reference_code, user_id, customer_name, customer_phone, vehicle_plate,
+        vehicle_model, service_id, scheduled_date, scheduled_time, duration_minutes,
+        end_time, bay_number, booking_type, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 30, ?, 1, ?, ?)
+    `);
+    const addReservation = (customer, date, time, bookingType, status, marker) => {
+      const result = insertReservation.run(
+        `Q${suffix}${marker}`,
+        customer.id,
+        `Cliente privado ${marker}`,
+        '+258840000000',
+        `PRIV-${suffix.slice(-5)}-${marker}`,
+        'Veículo privado',
+        service.id,
+        date,
+        time,
+        `${time.slice(0, 2)}:${String(Number(time.slice(3)) + 30).padStart(2, '0')}`,
+        bookingType,
+        status
+      );
+      reservationIds.push(result.lastInsertRowid);
+      return result.lastInsertRowid;
+    };
+
+    const earlierReservationId = addReservation(customers[1], futureDate, '09:00', 'shop', 'reservado', 'A');
+    const customerReservationId = addReservation(customers[0], futureDate, '10:00', 'shop', 'reservado', 'B');
+    addReservation(customers[1], futureDate, '11:00', 'shop', 'aguardando', 'C');
+    addReservation(customers[1], futureDate, '08:00', 'shop', 'concluido', 'D');
+    addReservation(customers[1], futureDate, '07:00', 'onsite', 'reservado', 'E');
+    addReservation(customers[1], today, '09:00', 'shop', 'aguardando', 'F');
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/reservations', reservationsRoutes);
+    app.use('/api/queue', queueRoutes);
+    const server = app.listen(0, '127.0.0.1');
+
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const baseUrl = `http://127.0.0.1:${server.address().port}/api`;
+      const customerToken = generateToken(customers[0]);
+      const employeeToken = generateToken(employee);
+      const customerHeaders = { Authorization: ['Bearer', customerToken].join(' ') };
+
+      const firstResponse = await fetch(`${baseUrl}/reservations/queue-position`, { headers: customerHeaders });
+      assert.strictEqual(firstResponse.status, 200);
+      const positions = await firstResponse.json();
+      const position = positions.find(item => item.reservation_id === customerReservationId);
+      assert.deepStrictEqual(
+        {
+          ahead_count: position.ahead_count,
+          position: position.position,
+          queue_size: position.queue_size
+        },
+        { ahead_count: 1, position: 2, queue_size: 3 }
+      );
+      assert.deepStrictEqual(Object.keys(position).sort(), [
+        'ahead_count', 'booking_type', 'position', 'queue_size',
+        'reservation_id', 'scheduled_date', 'scheduled_time'
+      ].sort(), 'A resposta não deve expor dados de outros clientes');
+
+      db.prepare("UPDATE reservations SET status = 'concluido' WHERE id = ?").run(earlierReservationId);
+      const updatedResponse = await fetch(`${baseUrl}/reservations/queue-position`, { headers: customerHeaders });
+      const updatedPositions = await updatedResponse.json();
+      const updatedPosition = updatedPositions.find(item => item.reservation_id === customerReservationId);
+      assert.deepStrictEqual(
+        {
+          ahead_count: updatedPosition.ahead_count,
+          position: updatedPosition.position,
+          queue_size: updatedPosition.queue_size
+        },
+        { ahead_count: 0, position: 1, queue_size: 2 }
+      );
+
+      const employeeResponse = await fetch(`${baseUrl}/reservations/queue-position`, {
+        headers: { Authorization: ['Bearer', employeeToken].join(' ') }
+      });
+      assert.strictEqual(employeeResponse.status, 403);
+
+      const publicQueueResponse = await fetch(`${baseUrl}/queue`);
+      assert.strictEqual(publicQueueResponse.status, 200);
+      const publicQueue = await publicQueueResponse.json();
+      assert.deepStrictEqual(Object.keys(publicQueue).sort(), [
+        'availableBays', 'capacity', 'date', 'totalBooked', 'totalInQueue', 'totalInService'
+      ].sort(), 'A fila pública deve conter apenas contagens agregadas');
+      assert.strictEqual(JSON.stringify(publicQueue).includes('Cliente privado'), false);
+      assert.strictEqual(JSON.stringify(publicQueue).includes('vehicle_plate'), false);
+    } finally {
+      if (reservationIds.length) {
+        const placeholders = reservationIds.map(() => '?').join(',');
+        db.prepare(`DELETE FROM reservations WHERE id IN (${placeholders})`).run(...reservationIds);
+      }
+      await new Promise(resolve => server.close(resolve));
+    }
   });
 
   // 3. Alteração de Estados da Reserva
